@@ -1,0 +1,28 @@
+stateDiagram-v2
+    direction LR
+    [*] --> Idle: app launch
+    Idle --> Active: start(taskId, name)
+    Active --> Paused: togglePause
+    Paused --> Active: togglePause
+    Active --> Persisted: stop
+    Paused --> Persisted: stop
+    Active --> Idle: discard
+    Paused --> Idle: discard
+    Persisted --> Idle: reset
+    Persisted --> [*]
+
+    state Active {
+        [*] --> Ticking
+        Ticking --> Ticking: 1Hz tick<br/>elapsed = now - start - pauseAcc
+    }
+
+    state Paused {
+        [*] --> Frozen
+        Frozen --> Frozen: pausedAt<br/>elapsed 不变
+    }
+
+    note right of Persisted
+        insert EventEntity
+        + EventTaskAllocation
+        clear SharedPrefs
+    end note

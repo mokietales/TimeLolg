@@ -1,0 +1,40 @@
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant Now as NowScreen
+    participant TS as TrackingSession
+    participant Prefs as SharedPreferences
+    participant Tick as 1Hz Ticker
+    participant DB as Room DB
+
+    Note over U,DB: 启动 → 选 Task → 开始 → 暂停/继续 → 停止 → 保存
+
+    U->>Now: tap task row "Coding"
+    Now->>TS: start(taskId=42, "Coding")
+    TS->>TS: startMs = now
+    TS->>Prefs: flush(start, taskId, name)
+    Now->>Tick: launch 1Hz coroutine
+
+    loop every second
+        Tick->>Now: nowMs = System.currentTimeMillis()
+        Now->>TS: elapsedMs(nowMs)
+        TS-->>Now: (now - startMs) - pauseAcc
+    end
+
+    U->>Now: tap Pause
+    Now->>TS: togglePause()
+    TS->>TS: pausedAtMs = now
+    TS->>Prefs: flush(pausedAt)
+
+    U->>Now: tap Resume
+    Now->>TS: togglePause()
+    TS->>TS: pauseAcc += now - pausedAtMs
+    TS->>Prefs: flush(pauseAcc, pausedAt=null)
+
+    U->>Now: tap Stop
+    Now->>TS: stopAndConsume()
+    TS-->>Now: StopSnapshot(start, end, note, taskId, pauseAcc)
+    TS->>Prefs: clear()
+    Now->>DB: insertEventWithAllocations(Event, [Alloc(taskId)])
+    DB-->>Now: success
+    Now->>Now: render Idle state

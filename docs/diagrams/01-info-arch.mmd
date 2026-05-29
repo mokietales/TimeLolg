@@ -1,0 +1,32 @@
+graph TD
+    Launch([Launch App]) --> Now
+    Now[Now Tab<br/>当前行为]
+    Timeline[Timeline Tab<br/>事件流]
+    Review[Review Tab<br/>统计聚合]
+    Events[Events Tab<br/>原始记录]
+
+    Now <-->|tab| Timeline
+    Timeline <-->|tab| Review
+    Review <-->|tab| Events
+    Events <-->|tab| Now
+
+    Now --> Idle[Idle: Task 列表]
+    Now --> Active[Active: 72sp 计时器]
+    Idle -->|tap task| Active
+    Active -->|stop| EventDB[(Event 持久化)]
+
+    Timeline --> ByDay[按 Today/Yesterday/日期分组]
+
+    Review --> Range[分段: Today / Week / Month / All]
+    Range --> Bars[每 Task 总时长 + 条形 + 计数]
+
+    Events --> Filter[过滤: All/Today/Week/With note]
+    Events --> Edit[Edit Dialog: 改 Task / Note / 删除]
+    Edit --> EventDB
+
+    classDef tab fill:#F2F2F7,stroke:#5E6AD2,stroke-width:2px,color:#0A0A0A
+    classDef screen fill:#FFFFFF,stroke:#6E6E73,color:#0A0A0A
+    classDef storage fill:#5E6AD2,stroke:#5E6AD2,color:#FFFFFF
+    class Now,Timeline,Review,Events tab
+    class Idle,Active,ByDay,Range,Bars,Filter,Edit screen
+    class EventDB storage

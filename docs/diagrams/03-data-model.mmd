@@ -1,0 +1,26 @@
+erDiagram
+    Task ||--o{ EventTaskAllocation : "1..N alloc"
+    Event ||--o{ EventTaskAllocation : "1..N alloc"
+    Task ||--o{ TaskInheritance : "parent of"
+    Task ||--o{ TaskInheritance : "child of"
+
+    Task {
+        long id PK
+        string name UK
+        long createdAtMs
+    }
+    Event {
+        long id PK
+        long startMs
+        long endMs
+        string note
+        long createdAtMs
+    }
+    EventTaskAllocation {
+        long eventId PK_FK
+        long taskId PK_FK
+    }
+    TaskInheritance {
+        long childTaskId PK_FK
+        long parentTaskId PK_FK
+    }
