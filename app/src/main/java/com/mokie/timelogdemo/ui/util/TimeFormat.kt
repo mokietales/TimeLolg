@@ -8,14 +8,15 @@ import java.util.TimeZone
 
 object TimeFormat {
 
-    private val locale: Locale get() = Locale.getDefault()
+    private val locale: Locale get() = Locale.CHINA
+    private val numericLocale: Locale get() = Locale.ROOT
 
     fun hms(seconds: Long): String {
         val s = seconds.coerceAtLeast(0L)
         val h = s / 3600
         val m = (s % 3600) / 60
         val sec = s % 60
-        return String.format("%02d:%02d:%02d", h, m, sec)
+        return String.format(numericLocale, "%02d:%02d:%02d", h, m, sec)
     }
 
     fun hmsFromMs(ms: Long): String = hms(ms / 1000L)
@@ -26,41 +27,61 @@ object TimeFormat {
         val h = s / 3600
         val m = (s % 3600) / 60
         val ss = s % 60
-        return if (h > 0) String.format("%d:%02d:%02d", h, m, ss)
-        else String.format("%d:%02d", m, ss)
+        return if (h > 0) String.format(numericLocale, "%d:%02d:%02d", h, m, ss)
+        else String.format(numericLocale, "%d:%02d", m, ss)
     }
 
-    /** Short duration label, e.g. "24m", "1h 5m", "3s". */
-    fun shortDuration(ms: Long): String {
-        val totalSec = (ms / 1000L).coerceAtLeast(0L)
-        val h = totalSec / 3600
-        val m = (totalSec % 3600) / 60
-        val s = totalSec % 60
-        return when {
-            h > 0 && m > 0 -> "${h}h ${m}m"
-            h > 0 -> "${h}h"
-            m > 0 -> "${m}m"
-            else -> "${s}s"
-        }
-    }
+    /** Compact numeric duration, e.g. "24:00", "1:05:00", "0:03". */
+    fun shortDuration(ms: Long): String = clockSeconds(ms / 1000L)
 
     fun hhmm(ms: Long): String =
-        SimpleDateFormat("HH:mm", locale).format(Date(ms))
+        SimpleDateFormat("HH:mm", numericLocale).format(Date(ms))
+
+    fun monthDayYear(ms: Long): String =
+        SimpleDateFormat("yyyy年M月d日", locale).format(Date(ms))
+
+    /** Round epoch ms down to the nearest whole minute. */
+    fun roundToMinute(ms: Long): Long = (ms / 60_000L) * 60_000L
+
+    /** Snap a raw span to whole seconds (matches timer stop behaviour). */
+    fun snapDurationMs(rawMs: Long): Long {
+        val raw = rawMs.coerceAtLeast(0L)
+        return (raw / 1000L) * 1000L
+    }
+
+    fun withDate(baseMs: Long, dateAnchorMs: Long): Long {
+        val time = Calendar.getInstance().apply { timeInMillis = baseMs }
+        val date = Calendar.getInstance().apply { timeInMillis = dateAnchorMs }
+        date.set(Calendar.HOUR_OF_DAY, time.get(Calendar.HOUR_OF_DAY))
+        date.set(Calendar.MINUTE, time.get(Calendar.MINUTE))
+        date.set(Calendar.SECOND, 0)
+        date.set(Calendar.MILLISECOND, 0)
+        return date.timeInMillis
+    }
+
+    fun withTime(baseMs: Long, hour: Int, minute: Int): Long {
+        val cal = Calendar.getInstance().apply { timeInMillis = baseMs }
+        cal.set(Calendar.HOUR_OF_DAY, hour)
+        cal.set(Calendar.MINUTE, minute)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
 
     fun monthDay(ms: Long): String =
-        SimpleDateFormat("MMM d", locale).format(Date(ms))
+        SimpleDateFormat("M月d日", locale).format(Date(ms))
 
     fun weekdayLong(ms: Long): String =
-        SimpleDateFormat("EEEE, MMM d", locale).format(Date(ms))
+        SimpleDateFormat("M月d日 EEEE", locale).format(Date(ms))
 
     fun dayHeader(ms: Long): String {
         val cal = Calendar.getInstance().apply { timeInMillis = ms }
         val today = Calendar.getInstance()
         val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
         return when {
-            sameDay(cal, today) -> "Today"
-            sameDay(cal, yesterday) -> "Yesterday"
-            else -> SimpleDateFormat("EEEE, MMM d", locale).format(Date(ms))
+            sameDay(cal, today) -> "今天"
+            sameDay(cal, yesterday) -> "昨天"
+            else -> SimpleDateFormat("M月d日 EEEE", locale).format(Date(ms))
         }
     }
 

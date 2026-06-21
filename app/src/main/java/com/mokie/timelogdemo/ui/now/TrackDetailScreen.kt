@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -51,6 +52,7 @@ import com.mokie.timelogdemo.data.TrackTree
 import com.mokie.timelogdemo.data.observeTrackTree
 import com.mokie.timelogdemo.ui.TrackingSession
 import com.mokie.timelogdemo.ui.components.InsetGroup
+import com.mokie.timelogdemo.ui.components.ManualSessionDialog
 import com.mokie.timelogdemo.ui.components.RowDivider
 import com.mokie.timelogdemo.ui.components.SectionHeader
 import com.mokie.timelogdemo.ui.components.SessionEditDialog
@@ -88,6 +90,7 @@ fun TrackDetailScreen(
     var editingSessionId by remember { mutableStateOf<Long?>(null) }
     var addParentVisible by remember { mutableStateOf(false) }
     var addChildVisible by remember { mutableStateOf(false) }
+    var manualEntryVisible by remember { mutableStateOf(false) }
 
     val selfMs = remember(contributions) { contributions.sumOf { it.contributedMs } }
     val rolledUpMs = tree?.totalMs?.get(trackId) ?: selfMs
@@ -127,8 +130,12 @@ fun TrackDetailScreen(
                     onBack()
                 }
             },
-            disabledReason = if (session.isActive) "A session is already running" else null
+            disabledReason = if (session.isActive) "已有进行中的记录" else null
         )
+
+        Spacer(Modifier.height(8.dp))
+
+        LogTimeButton(onClick = { manualEntryVisible = true })
 
         Spacer(Modifier.height(28.dp))
 
@@ -150,7 +157,7 @@ fun TrackDetailScreen(
 
         Spacer(Modifier.height(28.dp))
 
-        SectionHeader(title = "SESSIONS")
+        SectionHeader(title = "记录")
 
         if (contributions.isEmpty()) {
             Column(
@@ -159,7 +166,7 @@ fun TrackDetailScreen(
                     .padding(horizontal = 24.dp, vertical = 16.dp)
             ) {
                 Text(
-                    text = "No sessions yet.",
+                    text = "暂无记录。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -207,16 +214,16 @@ fun TrackDetailScreen(
                         trackDao.deleteTrackCascade(trackId)
                         onBack()
                     }
-                }) { Text("Delete") }
+                }) { Text("删除") }
             },
             dismissButton = {
-                TextButton(onClick = { deleteConfirmVisible = false }) { Text("Cancel") }
+                TextButton(onClick = { deleteConfirmVisible = false }) { Text("取消") }
             },
-            title = { Text("Delete this track?") },
+            title = { Text("删除此主题？") },
             text = {
                 Text(
-                    "Sub-tracks lose this parent edge but stay. Allocations on this " +
-                        "track are removed; allocations on other tracks remain.",
+                    "子主题会保留，但与此主题的关联会被移除。" +
+                        "此主题上的时间分配会被删除，其他主题上的分配不受影响。",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -225,7 +232,7 @@ fun TrackDetailScreen(
 
     if (addParentVisible) {
         ParentChildPickerDialog(
-            title = "Add parent tracks",
+            title = "添加父主题",
             tree = tree,
             // candidates that can validly become a parent of this node
             filter = { candidate ->
@@ -254,7 +261,7 @@ fun TrackDetailScreen(
 
     if (addChildVisible) {
         ParentChildPickerDialog(
-            title = "Add sub-tracks",
+            title = "添加子主题",
             tree = tree,
             filter = { candidate ->
                 candidate.id != trackId &&
@@ -288,6 +295,15 @@ fun TrackDetailScreen(
             onDismiss = { editingSessionId = null }
         )
     }
+
+    if (manualEntryVisible) {
+        ManualSessionDialog(
+            sessionDao = sessionDao,
+            trackDao = trackDao,
+            initialTrackId = trackId,
+            onDismiss = { manualEntryVisible = false }
+        )
+    }
 }
 
 @Composable
@@ -304,10 +320,10 @@ private fun HierarchySection(
     val byId = tree?.byId.orEmpty()
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        SectionHeader(title = "PARENTS")
+        SectionHeader(title = "父主题")
         InsetGroup {
             if (parentIds.isEmpty()) {
-                EmptyHierarchyRow("No parents — this is a root track.")
+                EmptyHierarchyRow("无父主题 — 这是根主题。")
             } else {
                 parentIds.forEachIndexed { i, pid ->
                     val name = byId[pid]?.name ?: "—"
@@ -322,15 +338,15 @@ private fun HierarchySection(
                 }
                 RowDivider()
             }
-            HierarchyAddRow(label = "Add parent…", onClick = onAddParent)
+            HierarchyAddRow(label = "添加父主题…", onClick = onAddParent)
         }
 
         Spacer(Modifier.height(20.dp))
 
-        SectionHeader(title = "SUB-TRACKS")
+        SectionHeader(title = "子主题")
         InsetGroup {
             if (childIds.isEmpty()) {
-                EmptyHierarchyRow("No sub-tracks linked.")
+                EmptyHierarchyRow("暂无关联的子主题。")
             } else {
                 childIds.forEachIndexed { i, cid ->
                     val name = byId[cid]?.name ?: "—"
@@ -345,7 +361,7 @@ private fun HierarchySection(
                 }
                 RowDivider()
             }
-            HierarchyAddRow(label = "Add sub-track…", onClick = onAddChild)
+            HierarchyAddRow(label = "添加子主题…", onClick = onAddChild)
         }
     }
 }
@@ -410,7 +426,7 @@ private fun HierarchyLinkRow(
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "Unlink",
+            text = "取消关联",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
@@ -498,7 +514,7 @@ private fun DetailTopBar(
     ) {
         Icon(
             imageVector = Icons.Outlined.ArrowBack,
-            contentDescription = "Back",
+            contentDescription = "返回",
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .clip(CircleShape)
@@ -515,7 +531,7 @@ private fun DetailTopBar(
         )
         Icon(
             imageVector = Icons.Outlined.Edit,
-            contentDescription = "Rename",
+            contentDescription = "重命名",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .clip(CircleShape)
@@ -524,7 +540,7 @@ private fun DetailTopBar(
                 .size(18.dp)
         )
         Text(
-            text = "Delete",
+            text = "删除",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.error,
             modifier = Modifier
@@ -548,24 +564,23 @@ private fun Hero(
             .padding(horizontal = 24.dp)
     ) {
         Text(
-            text = if (totalMs > 0L) TimeFormat.shortDuration(totalMs) else "0m",
+            text = if (totalMs > 0L) TimeFormat.shortDuration(totalMs) else "0:00",
             style = MaterialTheme.typography.displayLarge.copy(
                 fontFeatureSettings = TabularNumFeature
             ),
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(6.dp))
-        val sessionPart = "$sessionCount session" + if (sessionCount == 1) "" else "s"
+        val sessionPart = "${sessionCount} 条记录"
         if (descendantCount > 0) {
-            val plural = if (descendantCount == 1) "" else "s"
             Text(
-                text = "Including $descendantCount sub-track$plural",
+                text = "含 $descendantCount 个子主题",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "Self: ${TimeFormat.shortDuration(selfMs)} · $sessionPart",
+                text = "自身 ${TimeFormat.shortDuration(selfMs)} · $sessionPart",
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontFeatureSettings = TabularNumFeature
                 ),
@@ -578,6 +593,33 @@ private fun Hero(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+@Composable
+private fun LogTimeButton(onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Schedule,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "补录时间",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -612,7 +654,7 @@ private fun StartButton(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Start a session",
+                text = "开始计时",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = if (enabled) MaterialTheme.colorScheme.onPrimary
                 else MaterialTheme.colorScheme.onSurfaceVariant
@@ -690,8 +732,8 @@ private fun ContributionRow(
         if (sharedSplit) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "of ${TimeFormat.shortDuration(sessionTotalMs)} · split across " +
-                    "${row.totalAllocationsCount} tracks",
+                text = "共 ${TimeFormat.shortDuration(sessionTotalMs)} · 分配到 " +
+                    "${row.totalAllocationsCount} 个主题",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -705,7 +747,7 @@ private fun ContributionRow(
             )
         } else {
             Text(
-                text = "Add note…",
+                text = "添加备注…",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -726,12 +768,12 @@ private fun RenameDialog(
             TextButton(
                 onClick = { onConfirm(name) },
                 enabled = name.trim().isNotEmpty()
-            ) { Text("Save") }
+            ) { Text("保存") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
-        title = { Text("Rename track") },
+        title = { Text("重命名主题") },
         text = {
             BasicTextField(
                 value = name,

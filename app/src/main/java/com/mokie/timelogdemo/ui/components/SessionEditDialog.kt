@@ -95,9 +95,9 @@ fun SessionEditDialog(
             onDismissRequest = onDismiss,
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text("取消") }
             },
-            title = { Text("Loading…") },
+            title = { Text("加载中…") },
             text = {}
         )
         return
@@ -127,12 +127,12 @@ fun SessionEditDialog(
                     }
                 },
                 enabled = saveEnabled
-            ) { Text("Save") }
+            ) { Text("保存") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
-        title = { Text("Edit session") },
+        title = { Text("编辑记录") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -147,7 +147,7 @@ fun SessionEditDialog(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text = "NOTE",
+                    text = "备注",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -165,7 +165,7 @@ fun SessionEditDialog(
                         Box(modifier = Modifier.fillMaxWidth()) {
                             if (noteText.isEmpty()) {
                                 Text(
-                                    "Add a note…",
+                                    "添加备注…",
                                     style = MaterialTheme.typography.bodyLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -181,7 +181,7 @@ fun SessionEditDialog(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = "ALLOCATION",
+                    text = "时间分配",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -214,9 +214,9 @@ fun SessionEditDialog(
                 if (!saveEnabled && allocs.isNotEmpty()) {
                     val sum = allocs.sumOf { it.durationMs }
                     Text(
-                        text = "Allocation sum ${TimeFormat.shortDuration(sum)} ≠ " +
-                            "session total ${TimeFormat.shortDuration(sessionTotalMs)}. " +
-                            "Edit split to fix.",
+                        text = "分配合计 ${TimeFormat.shortDuration(sum)} ≠ " +
+                            "记录总计 ${TimeFormat.shortDuration(sessionTotalMs)}。" +
+                            "请调整分配。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 6.dp)
@@ -226,7 +226,7 @@ fun SessionEditDialog(
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Edit split…",
+                        text = "调整分配…",
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
@@ -237,7 +237,7 @@ fun SessionEditDialog(
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                     )
                     Text(
-                        text = "Add track…",
+                        text = "添加主题…",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
@@ -265,7 +265,7 @@ fun SessionEditDialog(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Delete session",
+                        text = "删除记录",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -276,7 +276,7 @@ fun SessionEditDialog(
 
     if (pickerVisible) {
         TrackPickerDialog(
-            title = "Tracks for this session",
+            title = "此记录的主题",
             available = allTracks,
             initiallySelected = allocs.map { it.trackId }.toSet(),
             onDismiss = { pickerVisible = false },
@@ -325,7 +325,7 @@ fun SessionEditDialog(
 
     if (allocDialogVisible) {
         AllocationDialog(
-            title = "Distribute time",
+            title = "分配时间",
             totalMs = sessionTotalMs,
             tracks = allocs.map { TrackingSession.TrackRef(it.trackId, it.trackName) },
             initial = allocs.associate { it.trackId to it.durationMs },
@@ -353,14 +353,14 @@ fun SessionEditDialog(
                         onDismiss()
                     }
                 }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { askDelete = false }) { Text("Cancel") }
+                TextButton(onClick = { askDelete = false }) { Text("取消") }
             },
-            title = { Text("Delete this session?") },
-            text = { Text("This will permanently remove the session and all its allocations.") }
+            title = { Text("删除这条记录？") },
+            text = { Text("将永久删除此记录及其所有时间分配。") }
         )
     }
 }

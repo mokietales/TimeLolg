@@ -104,10 +104,10 @@ fun AllocationDialog(
                         .toMap()
                     onConfirm(map)
                 }
-            ) { Text("Save") }
+            ) { Text("保存") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
         title = { Text(title) },
         text = {
@@ -122,7 +122,7 @@ fun AllocationDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Session total ${TimeFormat.clockSeconds(totalSec)}",
+                        text = "总计 ${TimeFormat.clockSeconds(totalSec)}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFeatureSettings = TabularNumFeature
                         ),
@@ -130,7 +130,7 @@ fun AllocationDialog(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "Even split",
+                        text = "均分",
                         style = MaterialTheme.typography.labelMedium.copy(
                             fontWeight = FontWeight.SemiBold
                         ),
@@ -191,7 +191,7 @@ private fun AllocationSliderRow(
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Outlined.Close,
-                    contentDescription = "Remove",
+                    contentDescription = "移除",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .clip(CircleShape)

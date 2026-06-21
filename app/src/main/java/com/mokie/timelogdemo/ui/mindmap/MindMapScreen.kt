@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -49,7 +48,8 @@ import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlinx.coroutines.launch
 
 /**
- * Indented outliner over the Track DAG. A node with multiple parents appears
+ * Indented outliner over the Track DAG, designed to be embedded as a section
+ * (e.g. the Review tab's "Mind map" mode). A node with multiple parents appears
  * under each — annotated with an "↗ N" badge so the user knows it's shared.
  *
  * Each row's right-hand number is the rolled-up total (self + deduped
@@ -57,67 +57,54 @@ import kotlinx.coroutines.launch
  * time does this branch hold".
  */
 @Composable
-fun MindMapScreen(
+fun MindMapContent(
+    tree: TrackTree?,
     trackDao: TrackDao,
-    sessionDao: SessionDao,
     onOpenTrackDetail: (Long) -> Unit,
-    onBack: () -> Unit
+    modifier: Modifier = Modifier
 ) {
-    val tree by remember(trackDao, sessionDao) {
-        observeTrackTree(trackDao, sessionDao)
-    }.collectAsState(initial = null)
-
     var collapsed by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     var addingChildOf by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val current = tree
 
-    Column(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        TopBar(
-            title = "Mind map",
-            subtitle = current?.let { "${it.tracks.size} tracks · ${it.roots.size} roots" },
-            onBack = onBack
+    if (current == null) {
+        Spacer(Modifier.height(48.dp))
+        return
+    }
+
+    if (current.tracks.isEmpty()) {
+        EmptyState(
+            title = "还没有主题",
+            subtitle = "在「现在」页创建一个主题即可开始。"
         )
+        return
+    }
 
-        if (current == null) {
-            Spacer(Modifier.height(48.dp))
-            return
-        }
+    val rows = remember(current, collapsed) {
+        buildRows(tree = current, collapsed = collapsed)
+    }
 
-        if (current.tracks.isEmpty()) {
-            EmptyState(
-                title = "No tracks yet",
-                subtitle = "Create one from the Now tab to start the map."
-            )
-            return
-        }
-
-        val rows = remember(current, collapsed) {
-            buildRows(tree = current, collapsed = collapsed)
-        }
-
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            rows.forEach { row ->
-                item(key = "${row.trackId}-${row.path}") {
-                    OutlineRow(
-                        row = row,
-                        tree = current,
-                        isCollapsed = row.trackId in collapsed,
-                        onToggle = {
-                            collapsed = if (row.trackId in collapsed) {
-                                collapsed - row.trackId
-                            } else {
-                                collapsed + row.trackId
-                            }
-                        },
-                        onClickName = { onOpenTrackDetail(row.trackId) },
-                        onAddChild = { addingChildOf = row.trackId }
-                    )
-                }
+    LazyColumn(modifier = modifier.fillMaxSize()) {
+        rows.forEach { row ->
+            item(key = "${row.trackId}-${row.path}") {
+                OutlineRow(
+                    row = row,
+                    tree = current,
+                    isCollapsed = row.trackId in collapsed,
+                    onToggle = {
+                        collapsed = if (row.trackId in collapsed) {
+                            collapsed - row.trackId
+                        } else {
+                            collapsed + row.trackId
+                        }
+                    },
+                    onClickName = { onOpenTrackDetail(row.trackId) },
+                    onAddChild = { addingChildOf = row.trackId }
+                )
             }
         }
+        item { Spacer(Modifier.height(48.dp)) }
     }
 
     addingChildOf?.let { parentId ->
@@ -128,7 +115,7 @@ fun MindMapScreen(
             onConfirm = { childIds ->
                 scope.launch {
                     childIds.forEach { childId ->
-                        if (current?.canAddParent(childId, parentId) == true) {
+                        if (current.canAddParent(childId, parentId)) {
                             trackDao.insertInheritance(
                                 com.mokie.timelogdemo.data.TrackInheritanceEntity(
                                     childTrackId = childId,
@@ -214,7 +201,7 @@ private fun OutlineRow(
                 val rotation = if (isCollapsed) -90f else 0f
                 Icon(
                     imageVector = Icons.Outlined.ExpandMore,
-                    contentDescription = if (isCollapsed) "Expand" else "Collapse",
+                    contentDescription = if (isCollapsed) "展开" else "收起",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .size(18.dp)
@@ -270,7 +257,7 @@ private fun OutlineRow(
         // Add-child affordance
         Icon(
             imageVector = Icons.Outlined.Add,
-            contentDescription = "Add child",
+            contentDescription = "添加子主题",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .clip(CircleShape)
@@ -289,57 +276,16 @@ private fun OutlineRow(
     }
 
     if (descCount > 0 && isCollapsed) {
-        val plural = if (descCount == 1) "" else "s"
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 16.dp + indent + 32.dp, bottom = 4.dp)
         ) {
             Text(
-                text = "$descCount sub-track$plural collapsed",
+                text = "已收起 $descCount 个子主题",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )
-        }
-    }
-}
-
-@Composable
-private fun TopBar(
-    title: String,
-    subtitle: String?,
-    onBack: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.ArrowBack,
-            contentDescription = "Back",
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable(onClick = onBack)
-                .padding(8.dp)
-                .size(20.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            if (subtitle != null) {
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }
@@ -367,7 +313,7 @@ private fun AddChildDialog(
     }
 
     TrackPickerDialog(
-        title = "Add sub-tracks under " + (tree.byId[parentId]?.name ?: ""),
+        title = "在「${tree.byId[parentId]?.name ?: ""}」下添加子主题",
         available = candidates,
         initiallySelected = emptySet(),
         onDismiss = onDismiss,

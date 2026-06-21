@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.mokie.timelogdemo.data.SessionDao
 import com.mokie.timelogdemo.data.TrackDao
 import com.mokie.timelogdemo.ui.components.EmptyState
+import com.mokie.timelogdemo.ui.components.ManualSessionDialog
 import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.RowDivider
 import com.mokie.timelogdemo.ui.components.SessionEditDialog
@@ -40,11 +45,11 @@ import com.mokie.timelogdemo.ui.timeline.collapseRows
 import com.mokie.timelogdemo.ui.util.TimeFormat
 
 private enum class SessionFilter(val label: String) {
-    All("All"),
-    Today("Today"),
-    Week("Week"),
-    Noted("With note"),
-    Multi("Multi-track")
+    All("全部"),
+    Today("今天"),
+    Week("本周"),
+    Noted("有备注"),
+    Multi("多主题")
 }
 
 @Composable
@@ -55,6 +60,7 @@ fun SessionsScreen(
     val rows by sessionDao.observeAllAllocations().collectAsState(initial = emptyList())
     var filter by rememberSaveable { mutableStateOf(SessionFilter.All) }
     var editingSessionId by remember { mutableStateOf<Long?>(null) }
+    var manualEntryVisible by remember { mutableStateOf(false) }
 
     val sessions = remember(rows) { collapseRows(rows) }
     val filtered = remember(sessions, filter) {
@@ -74,26 +80,52 @@ fun SessionsScreen(
         }
     }
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-            PageTitle(
-                eyebrow = "Sessions",
-                title = "${filtered.size} ${if (filtered.size == 1) "record" else "records"}"
-            )
-        }
-        item { FilterChips(current = filter, onSelect = { filter = it }) }
-        item { Spacer(Modifier.height(20.dp)) }
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            item {
+                PageTitle(
+                    eyebrow = "记录",
+                    title = "${filtered.size} 条"
+                )
+            }
+            item { FilterChips(current = filter, onSelect = { filter = it }) }
+            item { Spacer(Modifier.height(20.dp)) }
 
-        if (filtered.isEmpty()) {
-            item { EmptyState(title = "No sessions", subtitle = "Try a different filter.") }
+            if (filtered.isEmpty()) {
+                item {
+                    EmptyState(
+                        title = "暂无记录",
+                        subtitle = "点击 + 补录时间，或在「现在」页开始计时。"
+                    )
+                }
+            }
+
+            items(items = filtered, key = { it.sessionId }) { sess ->
+                SessionRow(session = sess, onClick = { editingSessionId = sess.sessionId })
+                RowDivider(insetStart = 24.dp)
+            }
+
+            item { Spacer(Modifier.height(80.dp)) }
         }
 
-        items(items = filtered, key = { it.sessionId }) { sess ->
-            SessionRow(session = sess, onClick = { editingSessionId = sess.sessionId })
-            RowDivider(insetStart = 24.dp)
+        FloatingActionButton(
+            onClick = { manualEntryVisible = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(24.dp),
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        ) {
+            Icon(Icons.Outlined.Add, contentDescription = "补录时间")
         }
+    }
 
-        item { Spacer(Modifier.height(48.dp)) }
+    if (manualEntryVisible) {
+        ManualSessionDialog(
+            sessionDao = sessionDao,
+            trackDao = trackDao,
+            onDismiss = { manualEntryVisible = false }
+        )
     }
 
     editingSessionId?.let { sid ->
@@ -149,7 +181,7 @@ private fun SessionRow(session: TimelineSession, onClick: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = session.headlineTrack.ifEmpty { "Untitled" },
+                text = session.headlineTrack.ifEmpty { "未命名" },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,

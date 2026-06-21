@@ -36,18 +36,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mokie.timelogdemo.data.SessionDao
 import com.mokie.timelogdemo.data.TrackDao
-import com.mokie.timelogdemo.ui.mindmap.MindMapScreen
 import com.mokie.timelogdemo.ui.now.NowScreen
 import com.mokie.timelogdemo.ui.now.TrackDetailScreen
 import com.mokie.timelogdemo.ui.review.ReviewScreen
+import com.mokie.timelogdemo.ui.starmap.StarMapScreen
 import com.mokie.timelogdemo.ui.sessions.SessionsScreen
 import com.mokie.timelogdemo.ui.timeline.TimelineScreen
 
 private enum class Tab(val title: String, val icon: ImageVector) {
-    Now("Now", Icons.Outlined.AccessTime),
-    Timeline("Timeline", Icons.Outlined.Timeline),
-    Review("Review", Icons.Outlined.Insights),
-    Sessions("Sessions", Icons.Outlined.ListAlt)
+    Now("现在", Icons.Outlined.AccessTime),
+    Timeline("时间线", Icons.Outlined.Timeline),
+    Review("导图", Icons.Outlined.Insights),
+    Sessions("记录", Icons.Outlined.ListAlt)
 }
 
 /**
@@ -74,8 +74,8 @@ fun TimeLogApp(
         stack = stack + "detail:$id"
     }
 
-    fun pushMindMap() {
-        if (stack.lastOrNull() != "mindmap") stack = stack + "mindmap"
+    fun pushStarMap() {
+        if (stack.lastOrNull() != "starmap") stack = stack + "starmap"
     }
 
     fun pop() {
@@ -114,7 +114,7 @@ fun TimeLogApp(
                         trackDao = trackDao,
                         sessionDao = sessionDao,
                         onOpenTrackDetail = { id -> pushDetail(id) },
-                        onOpenMindMap = { pushMindMap() }
+                        onOpenStarMap = { pushStarMap() }
                     )
                     Tab.Timeline -> TimelineScreen(sessionDao = sessionDao)
                     Tab.Review -> ReviewScreen(
@@ -127,7 +127,8 @@ fun TimeLogApp(
                         trackDao = trackDao
                     )
                 }
-                top == "mindmap" -> MindMapScreen(
+                top == "starmap" -> StarMapScreen(
+                    session = session,
                     trackDao = trackDao,
                     sessionDao = sessionDao,
                     onOpenTrackDetail = { id -> pushDetail(id) },

@@ -46,17 +46,17 @@ fun TimelineScreen(sessionDao: SessionDao) {
     ) {
         item {
             PageTitle(
-                eyebrow = "Timeline",
-                title = if (sessions.isEmpty()) "No sessions yet"
-                else "${sessions.size} ${if (sessions.size == 1) "session" else "sessions"}"
+                eyebrow = "时间线",
+                title = if (sessions.isEmpty()) "暂无记录"
+                else "${sessions.size} 条记录"
             )
         }
 
         if (sessions.isEmpty()) {
             item {
                 EmptyState(
-                    title = "Nothing logged so far",
-                    subtitle = "Start something from the Now tab."
+                    title = "还没有任何记录",
+                    subtitle = "去「现在」页开始计时吧。"
                 )
             }
         }

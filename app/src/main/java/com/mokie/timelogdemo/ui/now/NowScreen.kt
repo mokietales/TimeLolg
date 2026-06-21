@@ -20,8 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PauseCircleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
@@ -72,7 +72,7 @@ fun NowScreen(
     trackDao: TrackDao,
     sessionDao: SessionDao,
     onOpenTrackDetail: (Long) -> Unit,
-    onOpenMindMap: () -> Unit
+    onOpenStarMap: () -> Unit
 ) {
     val summaries by trackDao.observeTrackSummaries().collectAsState(initial = emptyList())
     val allTracks by trackDao.observeTracks().collectAsState(initial = emptyList())
@@ -91,7 +91,7 @@ fun NowScreen(
     ) {
         PageTitle(
             eyebrow = TimeFormat.weekdayLong(System.currentTimeMillis()),
-            title = "Now"
+            title = "现在"
         )
 
         if (session.isActive) {
@@ -115,7 +115,7 @@ fun NowScreen(
                 summaries = summaries,
                 tree = tree,
                 onOpenDetail = onOpenTrackDetail,
-                onOpenMindMap = onOpenMindMap,
+                onOpenStarMap = onOpenStarMap,
                 onCreateTrack = { name ->
                     scope.launch {
                         ensureTrackId(trackDao, name)?.let { onOpenTrackDetail(it) }
@@ -129,7 +129,7 @@ fun NowScreen(
 
     if (pickerVisible) {
         TrackPickerDialog(
-            title = "Tracks for this session",
+            title = "此记录的主题",
             available = allTracks,
             initiallySelected = session.tracks.map { it.id }.toSet(),
             onDismiss = { pickerVisible = false },
@@ -151,7 +151,7 @@ fun NowScreen(
 
     pendingStop?.let { snap ->
         AllocationDialog(
-            title = "Allocate this session",
+            title = "分配此记录的时间",
             totalMs = snap.effectiveDurationMs,
             tracks = snap.tracks,
             initial = null,
@@ -243,7 +243,7 @@ private fun ActiveSession(
 
     val elapsedSec = session.elapsedMs(nowMs) / 1000L
     val startMs = session.startMs ?: 0L
-    val primary = session.primaryTrack?.name ?: "Untitled"
+    val primary = session.primaryTrack?.name ?: "未命名"
 
     Column(
         modifier = Modifier
@@ -278,7 +278,7 @@ private fun ActiveSession(
         Spacer(Modifier.height(4.dp))
 
         Text(
-            text = if (session.isPaused) "Paused" else "Started at ${TimeFormat.hhmm(startMs)}",
+            text = if (session.isPaused) "已暂停" else TimeFormat.hhmm(startMs),
             style = MaterialTheme.typography.bodySmall,
             color = if (session.isPaused)
                 MaterialTheme.colorScheme.primary
@@ -312,12 +312,12 @@ private fun ActiveSession(
         ) {
             CircleAction(
                 icon = if (session.isPaused) Icons.Outlined.PlayCircleOutline else Icons.Outlined.PauseCircleOutline,
-                label = if (session.isPaused) "Resume" else "Pause",
+                label = if (session.isPaused) "继续" else "暂停",
                 onClick = { session.togglePause() }
             )
             CircleAction(
                 icon = Icons.Outlined.StopCircle,
-                label = "Stop",
+                label = "停止",
                 primary = true,
                 onClick = onStop
             )
@@ -326,7 +326,7 @@ private fun ActiveSession(
         Spacer(Modifier.height(20.dp))
 
         Text(
-            text = "Discard",
+            text = "放弃",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
@@ -352,7 +352,7 @@ private fun TrackChips(
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Tracks",
+                text = "主题",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -374,7 +374,7 @@ private fun TrackChips(
             if (tracks.size > 1) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Tap a track to remove · time split on Stop",
+                    text = "点击主题可移除 · 停止时分配时间",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -418,13 +418,13 @@ private fun AddChip(onClick: () -> Unit) {
     ) {
         Icon(
             imageVector = Icons.Outlined.Add,
-            contentDescription = "Add track",
+            contentDescription = "添加主题",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(14.dp)
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            text = "Track",
+            text = "主题",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary
         )
@@ -458,7 +458,7 @@ private fun NoteField(
                 ) {
                     if (value.isEmpty()) {
                         Text(
-                            text = "Add a note…",
+                            text = "添加备注…",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -508,7 +508,7 @@ private fun IdleSection(
     summaries: List<TrackSummary>,
     tree: TrackTree?,
     onOpenDetail: (Long) -> Unit,
-    onOpenMindMap: () -> Unit,
+    onOpenStarMap: () -> Unit,
     onCreateTrack: (String) -> Unit
 ) {
     var showInput by remember { mutableStateOf(false) }
@@ -523,13 +523,13 @@ private fun IdleSection(
                 .padding(horizontal = 24.dp)
         ) {
             Text(
-                text = "Nothing tracked.",
+                text = "还没有记录。",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "Pick a track to see its detail and start a session.",
+                text = "选择一个主题查看详情并开始计时。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -538,7 +538,7 @@ private fun IdleSection(
         Spacer(Modifier.height(20.dp))
 
         InsetGroup {
-            MindMapEntryRow(onClick = onOpenMindMap)
+            StarMapEntryRow(onClick = onOpenStarMap)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -550,7 +550,7 @@ private fun IdleSection(
                 .padding(bottom = 8.dp)
         ) {
             Text(
-                text = "RECENT",
+                text = "最近",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -596,8 +596,9 @@ private fun IdleSection(
     }
 }
 
+/** Entry into the full-screen Star map — the network view of track relationships. */
 @Composable
-private fun MindMapEntryRow(onClick: () -> Unit) {
+private fun StarMapEntryRow(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -606,18 +607,24 @@ private fun MindMapEntryRow(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Outlined.AccountTree,
+            imageVector = Icons.Outlined.AutoAwesome,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp)
         )
         Spacer(Modifier.width(14.dp))
-        Text(
-            text = "Mind map",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "星图",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "主题关系网络",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Icon(
             imageVector = Icons.Outlined.ChevronRight,
             contentDescription = null,
@@ -655,15 +662,12 @@ private fun TrackSummaryRow(
                 color = MaterialTheme.colorScheme.onSurface
             )
             val sub = when {
-                rolledUpMs <= 0L && item.sessionCount == 0 -> "No sessions yet"
+                rolledUpMs <= 0L && item.sessionCount == 0 -> "暂无记录"
                 descendantCount > 0 -> {
-                    "${TimeFormat.shortDuration(rolledUpMs)} · " +
-                        "incl. $descendantCount sub-track" +
-                        if (descendantCount == 1) "" else "s"
+                    "${TimeFormat.shortDuration(rolledUpMs)} · 含 $descendantCount 个子主题"
                 }
                 else -> {
-                    "${TimeFormat.shortDuration(rolledUpMs)} · ${item.sessionCount} session" +
-                        if (item.sessionCount == 1) "" else "s"
+                    "${TimeFormat.shortDuration(rolledUpMs)} · ${item.sessionCount} 条记录"
                 }
             }
             Text(
@@ -698,7 +702,7 @@ private fun AddTrackRow(onClick: () -> Unit) {
         )
         Spacer(Modifier.width(14.dp))
         Text(
-            text = "New track",
+            text = "新建主题",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.primary
         )
@@ -731,7 +735,7 @@ private fun NewTrackRow(
                 Box(modifier = Modifier.fillMaxWidth()) {
                     if (value.isEmpty()) {
                         Text(
-                            text = "Track name",
+                            text = "主题名称",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -745,7 +749,7 @@ private fun NewTrackRow(
         )
 
         Text(
-            text = "Cancel",
+            text = "取消",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
@@ -755,7 +759,7 @@ private fun NewTrackRow(
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            text = "Open",
+            text = "打开",
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier

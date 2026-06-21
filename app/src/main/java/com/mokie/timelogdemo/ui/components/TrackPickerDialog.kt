@@ -68,10 +68,10 @@ fun TrackPickerDialog(
                     if (refs.isNotEmpty()) onConfirm(refs)
                 },
                 enabled = selected.isNotEmpty()
-            ) { Text("Done") }
+            ) { Text("完成") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
         title = { Text(title) },
         text = {
@@ -83,7 +83,7 @@ fun TrackPickerDialog(
             ) {
                 if (available.isEmpty() && !creating) {
                     Text(
-                        text = "No tracks yet.",
+                        text = "还没有主题。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -123,7 +123,7 @@ fun TrackPickerDialog(
                     )
                 } else {
                     Text(
-                        text = "+ New track",
+                        text = "+ 新建主题",
                         style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = FontWeight.Medium
                         ),
@@ -202,7 +202,7 @@ private fun NewTrackInline(
                 Box(modifier = Modifier.fillMaxWidth()) {
                     if (value.isEmpty()) {
                         Text(
-                            "Track name",
+                            "主题名称",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -215,7 +215,7 @@ private fun NewTrackInline(
                 .padding(vertical = 6.dp)
         )
         Text(
-            "Add",
+            "添加",
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
@@ -225,7 +225,7 @@ private fun NewTrackInline(
         )
         Spacer(Modifier.width(4.dp))
         Text(
-            "Cancel",
+            "取消",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
