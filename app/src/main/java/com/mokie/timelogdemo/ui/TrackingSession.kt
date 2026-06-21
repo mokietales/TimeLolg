@@ -57,6 +57,20 @@ class TrackingSession(context: Context) {
         flush()
     }
 
+    /**
+     * Start timing immediately with no theme attached. The theme(s), note, etc.
+     * can be filled in while running or when stopping. A theme must be chosen
+     * before the session can be committed (enforced at stop).
+     */
+    fun startBlank() {
+        startMs = System.currentTimeMillis()
+        tracks = emptyList()
+        pausedAtMs = null
+        _pausedAccMs = 0L
+        note = ""
+        flush()
+    }
+
     fun addTrack(track: TrackRef) {
         if (tracks.any { it.id == track.id }) return
         tracks = tracks + track

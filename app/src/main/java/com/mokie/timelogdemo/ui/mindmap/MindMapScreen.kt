@@ -136,13 +136,15 @@ private data class OutlineRowSpec(
     val depth: Int,
     val hasChildren: Boolean,
     val sharedParentCount: Int,
+    /** Immediate parent in this position, or null for a root row. */
+    val parentId: Long?,
     /** Stable path key like "12.7.3" so the same trackId can appear at multiple positions. */
     val path: String
 )
 
 private fun buildRows(tree: TrackTree, collapsed: Set<Long>): List<OutlineRowSpec> {
     val out = mutableListOf<OutlineRowSpec>()
-    fun walk(id: Long, depth: Int, path: String, branchVisited: Set<Long>) {
+    fun walk(id: Long, depth: Int, parentId: Long?, path: String, branchVisited: Set<Long>) {
         val safeBranch = branchVisited + id
         val children = tree.childrenOf[id].orEmpty()
         val parents = tree.parentsOf[id].orEmpty()
@@ -152,17 +154,18 @@ private fun buildRows(tree: TrackTree, collapsed: Set<Long>): List<OutlineRowSpe
                 depth = depth,
                 hasChildren = children.isNotEmpty(),
                 sharedParentCount = parents.size,
+                parentId = parentId,
                 path = path
             )
         )
         if (id in collapsed) return
         children.forEach { c ->
             if (c in safeBranch) return@forEach // defensive cycle guard
-            walk(c, depth + 1, "$path.$c", safeBranch)
+            walk(c, depth + 1, id, "$path.$c", safeBranch)
         }
     }
     tree.roots.forEach { r ->
-        walk(r.id, 0, r.id.toString(), emptySet())
+        walk(r.id, 0, null, r.id.toString(), emptySet())
     }
     return out
 }
@@ -180,6 +183,14 @@ private fun OutlineRow(
     val totalMs = tree.totalMs[row.trackId] ?: 0L
     val descCount = tree.descendantCount[row.trackId] ?: 0
     val indent = (row.depth * 18).dp
+
+    // Share of the immediate parent branch this child accounts for.
+    val parentTotalMs = row.parentId?.let { tree.totalMs[it] ?: 0L } ?: 0L
+    val sharePercent: Int? = if (row.parentId != null && parentTotalMs > 0L && totalMs > 0L) {
+        ((totalMs.toDouble() / parentTotalMs.toDouble()) * 100.0).toInt().coerceIn(0, 100)
+    } else {
+        null
+    }
 
     Row(
         modifier = Modifier
@@ -243,6 +254,16 @@ private fun OutlineRow(
                     color = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier
                         .padding(end = 8.dp)
+                )
+            }
+            if (sharePercent != null) {
+                Text(
+                    text = "$sharePercent%",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFeatureSettings = TabularNumFeature
+                    ),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = 8.dp)
                 )
             }
             Text(

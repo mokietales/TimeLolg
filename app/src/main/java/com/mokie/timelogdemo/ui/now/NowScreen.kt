@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,10 +26,15 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.PauseCircleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -60,12 +64,15 @@ import com.mokie.timelogdemo.ui.components.AllocationDialog
 import com.mokie.timelogdemo.ui.components.InsetGroup
 import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.RowDivider
-import com.mokie.timelogdemo.ui.components.TabularTimerText
+import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.components.TrackPickerDialog
 import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private val TIMER_PEEK_HEIGHT = 116.dp
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowScreen(
     session: TrackingSession,
@@ -83,48 +90,93 @@ fun NowScreen(
 
     var pickerVisible by remember { mutableStateOf(false) }
     var pendingStop by remember { mutableStateOf<TrackingSession.StopSnapshot?>(null) }
+    // Shown when the user stops a blank (theme-less) session: pick a theme, then commit.
+    var stopPickVisible by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-    ) {
-        PageTitle(
-            eyebrow = TimeFormat.weekdayLong(System.currentTimeMillis()),
-            title = "现在"
+    fun finishStop() {
+        session.snapshotForStop()?.let { snap ->
+            if (snap.tracks.size == 1) {
+                commitSingleTrack(scope, sessionDao, snap)
+                session.clear()
+            } else {
+                pendingStop = snap
+            }
+        }
+    }
+
+    val scaffoldState = rememberBottomSheetScaffoldState(
+        bottomSheetState = rememberStandardBottomSheetState(
+            initialValue = if (session.isActive) SheetValue.PartiallyExpanded else SheetValue.Hidden,
+            skipHiddenState = false
         )
+    )
 
+    // Drive the sheet from session state: rise to a peek when a timer starts,
+    // slide away entirely when it stops or is discarded.
+    LaunchedEffect(session.isActive) {
         if (session.isActive) {
-            ActiveSession(
-                session = session,
-                onAddTrack = { pickerVisible = true },
-                onRemoveTrack = { id -> session.removeTrack(id) },
-                onStop = {
-                    val snap = session.snapshotForStop() ?: return@ActiveSession
-                    if (snap.tracks.size == 1) {
-                        commitSingleTrack(scope, sessionDao, snap)
-                        session.clear()
-                    } else {
-                        pendingStop = snap
-                    }
-                },
-                onCancel = { session.clear() }
-            )
+            scaffoldState.bottomSheetState.partialExpand()
         } else {
+            scaffoldState.bottomSheetState.hide()
+        }
+    }
+
+    BottomSheetScaffold(
+        scaffoldState = scaffoldState,
+        sheetPeekHeight = if (session.isActive) TIMER_PEEK_HEIGHT else 0.dp,
+        containerColor = MaterialTheme.colorScheme.background,
+        sheetContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        sheetShadowElevation = 4.dp,
+        sheetContent = {
+            if (session.isActive) {
+                ActiveSessionSheet(
+                    session = session,
+                    onAddTrack = { pickerVisible = true },
+                    onRemoveTrack = { id -> session.removeTrack(id) },
+                    onStop = {
+                        if (session.tracks.isEmpty()) {
+                            stopPickVisible = true
+                        } else {
+                            finishStop()
+                        }
+                    },
+                    onCancel = { session.clear() }
+                )
+            } else {
+                Spacer(Modifier.height(1.dp))
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+        ) {
+            PageTitle(
+                eyebrow = TimeFormat.weekdayLong(System.currentTimeMillis()),
+                title = "现在"
+            )
+
             IdleSection(
                 summaries = summaries,
                 tree = tree,
+                timerActive = session.isActive,
                 onOpenDetail = onOpenTrackDetail,
                 onOpenStarMap = onOpenStarMap,
+                onQuickStartBlank = { session.startBlank() },
+                onQuickStart = { item ->
+                    session.start(TrackingSession.TrackRef(id = item.trackId, name = item.name))
+                },
                 onCreateTrack = { name ->
                     scope.launch {
                         ensureTrackId(trackDao, name)?.let { onOpenTrackDetail(it) }
                     }
                 }
             )
-        }
 
-        Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(if (session.isActive) TIMER_PEEK_HEIGHT + 24.dp else 32.dp))
+        }
     }
 
     if (pickerVisible) {
@@ -136,6 +188,31 @@ fun NowScreen(
             onConfirm = { refs ->
                 session.replaceTracks(refs)
                 pickerVisible = false
+            },
+            onCreate = { name, onCreated ->
+                scope.launch {
+                    val newId = ensureTrackId(trackDao, name)
+                    val entity = newId?.let { id -> trackDao.findTrackById(id) }
+                    if (newId != null && entity != null) {
+                        onCreated(newId, entity.name)
+                    }
+                }
+            }
+        )
+    }
+
+    if (stopPickVisible) {
+        TrackPickerDialog(
+            title = "为这段时间选择主题",
+            available = allTracks,
+            initiallySelected = emptySet(),
+            onDismiss = { stopPickVisible = false },
+            onConfirm = { refs ->
+                stopPickVisible = false
+                if (refs.isNotEmpty()) {
+                    session.replaceTracks(refs)
+                    finishStop()
+                }
             },
             onCreate = { name, onCreated ->
                 scope.launch {
@@ -224,8 +301,13 @@ private fun commitMultiTrack(
     }
 }
 
+/**
+ * The running timer rendered as a bottom pull-up sheet. The top [TIMER_PEEK_HEIGHT]
+ * stays visible as a compact bar (theme + live time); dragging up reveals the full
+ * controls (themes, note, pause/stop/discard).
+ */
 @Composable
-private fun ActiveSession(
+private fun ActiveSessionSheet(
     session: TrackingSession,
     onAddTrack: () -> Unit,
     onRemoveTrack: (Long) -> Unit,
@@ -243,47 +325,74 @@ private fun ActiveSession(
 
     val elapsedSec = session.elapsedMs(nowMs) / 1000L
     val startMs = session.startMs ?: 0L
-    val primary = session.primaryTrack?.name ?: "未命名"
+    val primary = session.primaryTrack?.name ?: "未分组"
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .wrapContentHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(56.dp))
-
-        // Single-line slot: fixed height + clip so Text cannot grow to a second line.
-        Box(
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Compact bar — the part that peeks above the fold.
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp)
-                .clipToBounds(),
-            contentAlignment = Alignment.Center
+                .padding(horizontal = 20.dp)
+                .height(64.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            TabularTimerText(
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (session.isPaused)
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else
+                            MaterialTheme.colorScheme.primary
+                    )
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = primary,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+                Text(
+                    text = if (session.isPaused) "已暂停" else "计时中 · ${TimeFormat.hhmm(startMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (session.isPaused)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
                 text = TimeFormat.hms(elapsedSec),
-                modifier = Modifier.fillMaxWidth()
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontFeatureSettings = TabularNumFeature
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(6.dp))
+            CompactControl(
+                icon = if (session.isPaused) Icons.Outlined.PlayCircleOutline else Icons.Outlined.PauseCircleOutline,
+                contentDescription = if (session.isPaused) "继续" else "暂停",
+                onClick = { session.togglePause() }
+            )
+            CompactControl(
+                icon = Icons.Outlined.StopCircle,
+                contentDescription = "停止",
+                primary = true,
+                onClick = onStop
             )
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        Text(
-            text = primary,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(Modifier.height(4.dp))
-
-        Text(
-            text = if (session.isPaused) "已暂停" else TimeFormat.hhmm(startMs),
-            style = MaterialTheme.typography.bodySmall,
-            color = if (session.isPaused)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.onSurfaceVariant
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .height(0.5.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant)
         )
 
         Spacer(Modifier.height(24.dp))
@@ -294,46 +403,27 @@ private fun ActiveSession(
             onAdd = onAddTrack
         )
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
 
         NoteField(
             value = session.note,
             onValueChange = { session.updateNote(it) }
         )
 
-        Spacer(Modifier.height(40.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircleAction(
-                icon = if (session.isPaused) Icons.Outlined.PlayCircleOutline else Icons.Outlined.PauseCircleOutline,
-                label = if (session.isPaused) "继续" else "暂停",
-                onClick = { session.togglePause() }
-            )
-            CircleAction(
-                icon = Icons.Outlined.StopCircle,
-                label = "停止",
-                primary = true,
-                onClick = onStop
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
 
         Text(
             text = "放弃",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
+                .align(Alignment.CenterHorizontally)
                 .clip(RoundedCornerShape(8.dp))
                 .clickable(onClick = onCancel)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         )
+
+        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -471,44 +561,38 @@ private fun NoteField(
     }
 }
 
+/** Small icon-only control that lives in the peek bar (pause/resume, stop). */
 @Composable
-private fun CircleAction(
+private fun CompactControl(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
+    contentDescription: String,
     onClick: () -> Unit,
     primary: Boolean = false
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Icon(
+        imageVector = icon,
+        contentDescription = contentDescription,
+        tint = if (primary)
+            MaterialTheme.colorScheme.primary
+        else
+            MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(CircleShape)
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp, horizontal = 14.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (primary)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(56.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
+            .padding(5.dp)
+            .size(28.dp)
+    )
 }
 
 @Composable
 private fun IdleSection(
     summaries: List<TrackSummary>,
     tree: TrackTree?,
+    timerActive: Boolean,
     onOpenDetail: (Long) -> Unit,
     onOpenStarMap: () -> Unit,
+    onQuickStartBlank: () -> Unit,
+    onQuickStart: (TrackSummary) -> Unit,
     onCreateTrack: (String) -> Unit
 ) {
     var showInput by remember { mutableStateOf(false) }
@@ -517,22 +601,62 @@ private fun IdleSection(
     Column(modifier = Modifier.fillMaxWidth()) {
         Spacer(Modifier.height(16.dp))
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-        ) {
-            Text(
-                text = "还没有记录。",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = "选择一个主题查看详情并开始计时。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        if (!timerActive) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+            ) {
+                Text(
+                    text = "还没有记录。",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "先开始计时，主题和备注可以边计时边补，或停止时再填。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            QuickStartButton(onClick = onQuickStartBlank)
+        }
+
+        // Quick-start: tap a recent theme to begin timing right away. Hidden while
+        // a timer runs so a tap can't silently discard the in-progress session.
+        val quickItems = if (timerActive) emptyList() else summaries
+            .filter { it.sessionCount > 0 }
+            .sortedByDescending { it.lastSessionStartMs }
+            .take(6)
+        if (quickItems.isNotEmpty()) {
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 10.dp)
+            ) {
+                Text(
+                    text = "选主题开始",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                quickItems.forEach { item ->
+                    QuickStartChip(label = item.name, onClick = { onQuickStart(item) })
+                }
+            }
         }
 
         Spacer(Modifier.height(20.dp))
@@ -593,6 +717,68 @@ private fun IdleSection(
                 AddTrackRow(onClick = { showInput = true })
             }
         }
+    }
+}
+
+/** Prominent button that starts timing right away with no theme attached. */
+@Composable
+private fun QuickStartButton(onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primary)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.PlayCircleOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(26.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "快速开始",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimary
+            )
+            Text(
+                text = "直接计时，主题稍后再选",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+            )
+        }
+    }
+}
+
+/** One-tap chip that immediately starts a session for the given theme. */
+@Composable
+private fun QuickStartChip(label: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .clickable(onClick = onClick)
+            .padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.PlayCircleOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            maxLines = 1
+        )
     }
 }
 
