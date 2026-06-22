@@ -66,6 +66,7 @@ import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.RowDivider
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.components.TrackPickerDialog
+import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -454,6 +455,7 @@ private fun TrackChips(
                 tracks.forEach { track ->
                     Chip(
                         label = track.name,
+                        dotColor = trackColor(track.id),
                         onClick = if (tracks.size > 1) {
                             { onRemove(track.id) }
                         } else null
@@ -474,7 +476,11 @@ private fun TrackChips(
 }
 
 @Composable
-private fun Chip(label: String, onClick: (() -> Unit)?) {
+private fun Chip(
+    label: String,
+    onClick: (() -> Unit)?,
+    dotColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary
+) {
     val rowModifier = Modifier
         .clip(RoundedCornerShape(20.dp))
         .background(MaterialTheme.colorScheme.surfaceContainer)
@@ -485,7 +491,7 @@ private fun Chip(label: String, onClick: (() -> Unit)?) {
             modifier = Modifier
                 .size(6.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
+                .background(dotColor)
         )
         Spacer(Modifier.width(6.dp))
         Text(
@@ -838,7 +844,7 @@ private fun TrackSummaryRow(
             modifier = Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+                .background(trackColor(item.trackId))
         )
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {

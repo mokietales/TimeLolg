@@ -30,6 +30,7 @@ import com.mokie.timelogdemo.data.SessionDao
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
+import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.util.TimeFormat
 
 @Composable
@@ -140,7 +141,7 @@ private fun TimelineRow(row: TimelineSession) {
                 modifier = Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(trackColor(row.headlineTrackId))
             )
             Spacer(Modifier.height(4.dp))
             Box(
@@ -207,6 +208,7 @@ internal data class TimelineSession(
     val endMs: Long,
     val note: String,
     val headlineTrack: String,
+    val headlineTrackId: Long,
     val splits: List<Pair<String, Long>> // (track name, duration)
 )
 
@@ -227,6 +229,7 @@ internal fun collapseRows(rows: List<SessionAllocationRow>): List<TimelineSessio
                 } else {
                     "${biggest.trackName} +${group.size - 1}"
                 },
+                headlineTrackId = biggest.trackId,
                 splits = group.map { it.trackName to it.durationMs }
             )
         }

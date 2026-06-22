@@ -53,20 +53,35 @@ fun PageTitle(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
-            .padding(top = 12.dp, bottom = 24.dp)
+            .padding(top = 16.dp, bottom = 24.dp)
     ) {
         Text(
             text = eyebrow.uppercase(),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.primary
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+// A small filled identity dot for a track, using its categorical colour.
+@Composable
+fun TrackDot(
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 8.dp
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(color)
+    )
 }
 
 // Section header used inside a screen body, restrained.
@@ -103,7 +118,7 @@ fun InsetGroup(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
     ) {
         content()

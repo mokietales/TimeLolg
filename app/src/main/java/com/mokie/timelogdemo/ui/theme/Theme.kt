@@ -18,11 +18,14 @@ import androidx.core.view.WindowCompat
 private val LightColors = lightColorScheme(
     primary = AccentLight,
     onPrimary = Color.White,
-    primaryContainer = LightSurfaceContainer,
-    onPrimaryContainer = AccentLight,
+    primaryContainer = AccentContainerLight,
+    onPrimaryContainer = OnAccentContainerLight,
 
     secondary = LightOnSurfaceVariant,
     onSecondary = Color.White,
+
+    tertiary = WarnLight,
+    onTertiary = Color.White,
 
     background = LightBackground,
     onBackground = LightOnBackground,
@@ -32,22 +35,26 @@ private val LightColors = lightColorScheme(
     onSurfaceVariant = LightOnSurfaceVariant,
     surfaceContainer = LightSurfaceContainer,
     surfaceContainerLow = LightBackground,
-    surfaceContainerHigh = LightSurfaceVariant,
+    surfaceContainerHigh = LightSurfaceContainerHigh,
+    surfaceContainerHighest = LightSurfaceContainerHigh,
 
     outline = LightOutline,
     outlineVariant = LightOutlineVariant,
-    error = Color(0xFFE53935),
+    error = Color(0xFFE5484D),
     onError = Color.White
 )
 
 private val DarkColors = darkColorScheme(
     primary = AccentDark,
-    onPrimary = Color(0xFF0A0A0A),
-    primaryContainer = DarkSurfaceContainer,
-    onPrimaryContainer = AccentDark,
+    onPrimary = Color(0xFF06281A),
+    primaryContainer = AccentContainerDark,
+    onPrimaryContainer = OnAccentContainerDark,
 
     secondary = DarkOnSurfaceVariant,
     onSecondary = Color.White,
+
+    tertiary = WarnDark,
+    onTertiary = Color(0xFF2A1A00),
 
     background = DarkBackground,
     onBackground = DarkOnBackground,
@@ -57,7 +64,8 @@ private val DarkColors = darkColorScheme(
     onSurfaceVariant = DarkOnSurfaceVariant,
     surfaceContainer = DarkSurfaceContainer,
     surfaceContainerLow = DarkBackground,
-    surfaceContainerHigh = DarkSurfaceVariant,
+    surfaceContainerHigh = DarkSurfaceContainerHigh,
+    surfaceContainerHighest = DarkSurfaceContainerHigh,
 
     outline = DarkOutline,
     outlineVariant = DarkOutlineVariant,
@@ -66,11 +74,11 @@ private val DarkColors = darkColorScheme(
 )
 
 val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(6.dp),
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(30.dp)
 )
 
 @Composable

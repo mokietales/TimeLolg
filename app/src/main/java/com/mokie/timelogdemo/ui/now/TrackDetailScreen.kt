@@ -58,6 +58,7 @@ import com.mokie.timelogdemo.ui.components.SectionHeader
 import com.mokie.timelogdemo.ui.components.SessionEditDialog
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.components.TrackPickerDialog
+import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlinx.coroutines.launch
 
@@ -106,6 +107,7 @@ fun TrackDetailScreen(
     ) {
         DetailTopBar(
             title = track?.name ?: "",
+            dotColor = trackColor(trackId),
             onBack = onBack,
             onRename = { renameVisible = true },
             onDelete = { deleteConfirmVisible = true }
@@ -331,6 +333,7 @@ private fun HierarchySection(
                     HierarchyLinkRow(
                         name = name,
                         totalMs = total,
+                        dotColor = trackColor(pid),
                         onOpen = { onOpenTrack(pid) },
                         onRemove = { onRemoveParent(pid) }
                     )
@@ -354,6 +357,7 @@ private fun HierarchySection(
                     HierarchyLinkRow(
                         name = name,
                         totalMs = total,
+                        dotColor = trackColor(cid),
                         onOpen = { onOpenTrack(cid) },
                         onRemove = { onRemoveChild(cid) }
                     )
@@ -386,6 +390,7 @@ private fun EmptyHierarchyRow(text: String) {
 private fun HierarchyLinkRow(
     name: String,
     totalMs: Long,
+    dotColor: androidx.compose.ui.graphics.Color,
     onOpen: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -399,7 +404,7 @@ private fun HierarchyLinkRow(
             modifier = Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f))
+                .background(dotColor)
         )
         Spacer(Modifier.width(14.dp))
         Row(
@@ -502,6 +507,7 @@ private fun groupByDay(
 @Composable
 private fun DetailTopBar(
     title: String,
+    dotColor: androidx.compose.ui.graphics.Color,
     onBack: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit
@@ -523,6 +529,13 @@ private fun DetailTopBar(
                 .size(20.dp)
         )
         Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Spacer(Modifier.width(10.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,

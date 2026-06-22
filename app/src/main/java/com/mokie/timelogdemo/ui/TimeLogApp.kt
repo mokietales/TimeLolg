@@ -185,22 +185,33 @@ private fun TabButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val color = if (selected) MaterialTheme.colorScheme.onSurface
+    val color = if (selected) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
+            .padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            imageVector = tab.icon,
-            contentDescription = tab.title,
-            tint = color,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.height(4.dp))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(percent = 50))
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primaryContainer
+                    else androidx.compose.ui.graphics.Color.Transparent
+                )
+                .padding(horizontal = 18.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = tab.icon,
+                contentDescription = tab.title,
+                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else color,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(Modifier.height(3.dp))
         Text(
             text = tab.title,
             style = MaterialTheme.typography.labelSmall,

@@ -57,6 +57,7 @@ import com.mokie.timelogdemo.data.observeTrackTree
 import com.mokie.timelogdemo.ui.TrackingSession
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
+import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlin.math.cos
 import kotlin.math.max
@@ -386,9 +387,7 @@ private fun GraphCanvas(
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current.density
-    val rootColor = MaterialTheme.colorScheme.primary
-    val leafColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
-    val edgeColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+    val edgeColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val labelColor = MaterialTheme.colorScheme.onSurface
     val bg = MaterialTheme.colorScheme.background
 
@@ -437,6 +436,9 @@ private fun GraphCanvas(
             if (raw.length > 16) raw.take(15) + "…" else raw
         }
     }
+    // Categorical identity colour per node, so the network reads like a map
+    // rather than a field of identical indigo dots.
+    val nodeColors = (0 until sim.n).map { trackColor(sim.ids[it]) }
 
     val scope = rememberCoroutineScope()
     var canvasSize by remember(signature) { mutableStateOf(IntSize.Zero) }
@@ -531,10 +533,10 @@ private fun GraphCanvas(
             )
         }
 
-        // Nodes.
+        // Nodes — full colour for roots, slightly dimmed for leaves.
         for (i in 0 until sim.n) {
             drawCircle(
-                color = if (isRoot[i]) rootColor else leafColor,
+                color = if (isRoot[i]) nodeColors[i] else nodeColors[i].copy(alpha = 0.62f),
                 radius = sim.radii[i] * scale,
                 center = Offset(cx + sim.x[i] * scale, cy + sim.y[i] * scale)
             )

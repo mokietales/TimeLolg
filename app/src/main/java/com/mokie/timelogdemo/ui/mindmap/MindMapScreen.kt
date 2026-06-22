@@ -44,6 +44,7 @@ import com.mokie.timelogdemo.data.observeTrackTree
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.components.TrackPickerDialog
+import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlinx.coroutines.launch
 
@@ -221,9 +222,9 @@ private fun OutlineRow(
             } else {
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outline)
+                        .background(trackColor(row.trackId))
                 )
             }
         }
