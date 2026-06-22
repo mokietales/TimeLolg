@@ -35,17 +35,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mokie.timelogdemo.data.SessionAllocationRow
 import com.mokie.timelogdemo.data.SessionDao
 import com.mokie.timelogdemo.data.TrackDao
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.ManualSessionDialog
 import com.mokie.timelogdemo.ui.components.PageTitle
-import com.mokie.timelogdemo.ui.components.RowDivider
 import com.mokie.timelogdemo.ui.components.SessionEditDialog
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.theme.trackColor
-import com.mokie.timelogdemo.ui.timeline.TimelineSession
-import com.mokie.timelogdemo.ui.timeline.collapseRows
 import com.mokie.timelogdemo.ui.util.TimeFormat
 
 private enum class SessionFilter(val label: String) {
@@ -83,6 +81,12 @@ fun SessionsScreen(
             SessionFilter.Multi -> sessions.filter { it.splits.size > 1 }
         }
     }
+    // Group the filtered records by day, newest day first, so the records read
+    // as a chronological timeline rather than an undifferentiated list.
+    val grouped = remember(filtered) {
+        filtered.groupBy { TimeFormat.startOfDayMs(it.startMs) }
+            .toSortedMap(compareByDescending { it })
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -93,7 +97,7 @@ fun SessionsScreen(
                 )
             }
             item { FilterChips(current = filter, onSelect = { filter = it }) }
-            item { Spacer(Modifier.height(20.dp)) }
+            item { Spacer(Modifier.height(8.dp)) }
 
             if (filtered.isEmpty()) {
                 item {
@@ -104,12 +108,22 @@ fun SessionsScreen(
                 }
             }
 
-            items(items = filtered, key = { it.sessionId }) { sess ->
-                SessionRow(session = sess, onClick = { editingSessionId = sess.sessionId })
-                RowDivider(insetStart = 24.dp)
+            grouped.forEach { (dayMs, dayItems) ->
+                item(key = "header-$dayMs") {
+                    DayHeader(
+                        dayMs = dayMs,
+                        totalMs = dayItems.sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+                    )
+                }
+                items(items = dayItems, key = { it.sessionId }) { sess ->
+                    SessionRow(
+                        session = sess,
+                        onClick = { editingSessionId = sess.sessionId }
+                    )
+                }
             }
 
-            item { Spacer(Modifier.height(80.dp)) }
+            item { Spacer(Modifier.height(96.dp)) }
         }
 
         FloatingActionButton(
@@ -176,72 +190,161 @@ private fun FilterChips(current: SessionFilter, onSelect: (SessionFilter) -> Uni
 }
 
 @Composable
-private fun SessionRow(session: TimelineSession, onClick: () -> Unit) {
-    Column(
+private fun DayHeader(dayMs: Long, totalMs: Long) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .padding(top = 22.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = TimeFormat.dayHeader(dayMs),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = TimeFormat.shortDuration(totalMs),
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontFeatureSettings = TabularNumFeature
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SessionRow(session: SessionItem, onClick: () -> Unit) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 14.dp)
+            .padding(horizontal = 24.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(trackColor(session.headlineTrackId))
-            )
-            Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.width(64.dp)) {
             Text(
-                text = session.headlineTrack.ifEmpty { "未命名" },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = TimeFormat.shortDuration(
-                    (session.endMs - session.startMs).coerceAtLeast(0L)
+                text = TimeFormat.hhmm(session.startMs),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontFeatureSettings = TabularNumFeature
                 ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = TimeFormat.hhmm(session.endMs),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontFeatureSettings = TabularNumFeature
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "${TimeFormat.monthDay(session.startMs)} · " +
-                "${TimeFormat.hhmm(session.startMs)} – ${TimeFormat.hhmm(session.endMs)}",
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontFeatureSettings = TabularNumFeature
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        if (session.splits.size > 1) {
+
+        Spacer(Modifier.width(14.dp))
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(top = 7.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(trackColor(session.headlineTrackId))
+            )
             Spacer(Modifier.height(4.dp))
-            val splitText = session.splits.joinToString(separator = " · ") {
-                "${it.first} ${TimeFormat.shortDuration(it.second)}"
-            }
-            Text(
-                text = splitText,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontFeatureSettings = TabularNumFeature
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(28.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
             )
         }
-        if (session.note.isNotBlank()) {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = session.note,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+
+        Spacer(Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = session.headlineTrack.ifEmpty { "未命名" },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = TimeFormat.shortDuration(
+                        (session.endMs - session.startMs).coerceAtLeast(0L)
+                    ),
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontFeatureSettings = TabularNumFeature
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (session.splits.size > 1) {
+                Spacer(Modifier.height(2.dp))
+                val splitText = session.splits.joinToString(separator = " · ") {
+                    "${it.first} ${TimeFormat.shortDuration(it.second)}"
+                }
+                Text(
+                    text = splitText,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFeatureSettings = TabularNumFeature
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (session.note.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = session.note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
+}
+
+/** One recorded session, flattened across its per-track allocations. */
+internal data class SessionItem(
+    val sessionId: Long,
+    val startMs: Long,
+    val endMs: Long,
+    val note: String,
+    val headlineTrack: String,
+    val headlineTrackId: Long,
+    val splits: List<Pair<String, Long>> // (track name, duration)
+)
+
+/** Collapse the per-allocation rows back into one item per session. */
+internal fun collapseRows(rows: List<SessionAllocationRow>): List<SessionItem> {
+    if (rows.isEmpty()) return emptyList()
+    val grouped = rows.groupBy { it.sessionId }
+    return grouped.values
+        .map { group ->
+            val first = group.first()
+            val biggest = group.maxByOrNull { it.durationMs } ?: first
+            SessionItem(
+                sessionId = first.sessionId,
+                startMs = first.startMs,
+                endMs = first.endMs,
+                note = first.note,
+                headlineTrack = if (group.size == 1) {
+                    biggest.trackName
+                } else {
+                    "${biggest.trackName} +${group.size - 1}"
+                },
+                headlineTrackId = biggest.trackId,
+                splits = group.map { it.trackName to it.durationMs }
+            )
+        }
+        .sortedByDescending { it.startMs }
 }

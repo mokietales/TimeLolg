@@ -16,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.ListAlt
-import androidx.compose.material.icons.outlined.Timeline
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,11 +40,9 @@ import com.mokie.timelogdemo.ui.now.TrackDetailScreen
 import com.mokie.timelogdemo.ui.review.ReviewScreen
 import com.mokie.timelogdemo.ui.starmap.StarMapScreen
 import com.mokie.timelogdemo.ui.sessions.SessionsScreen
-import com.mokie.timelogdemo.ui.timeline.TimelineScreen
 
 private enum class Tab(val title: String, val icon: ImageVector) {
     Now("现在", Icons.Outlined.AccessTime),
-    Timeline("时间线", Icons.Outlined.Timeline),
     Review("导图", Icons.Outlined.Insights),
     Sessions("记录", Icons.Outlined.ListAlt)
 }
@@ -116,7 +113,6 @@ fun TimeLogApp(
                         onOpenTrackDetail = { id -> pushDetail(id) },
                         onOpenStarMap = { pushStarMap() }
                     )
-                    Tab.Timeline -> TimelineScreen(sessionDao = sessionDao)
                     Tab.Review -> ReviewScreen(
                         sessionDao = sessionDao,
                         trackDao = trackDao,
