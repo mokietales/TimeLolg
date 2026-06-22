@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PauseCircleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.StopCircle
@@ -105,21 +107,22 @@ fun NowScreen(
         }
     }
 
+    // The sheet is never hidden by gesture (skipHiddenState = true) so it can't
+    // get dragged away into an unrecoverable state. When no timer runs the peek
+    // height is 0, so the always-anchored sheet is simply invisible; when a timer
+    // is active it rests at the peek and can be pulled up to edit.
     val scaffoldState = rememberBottomSheetScaffoldState(
         bottomSheetState = rememberStandardBottomSheetState(
-            initialValue = if (session.isActive) SheetValue.PartiallyExpanded else SheetValue.Hidden,
-            skipHiddenState = false
+            initialValue = SheetValue.PartiallyExpanded,
+            skipHiddenState = true
         )
     )
+    val sheetExpanded = scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded
 
-    // Drive the sheet from session state: rise to a peek when a timer starts,
-    // slide away entirely when it stops or is discarded.
+    // Collapse back to the peek whenever the timer starts or stops, so a new
+    // session always opens at the compact bar rather than fully expanded.
     LaunchedEffect(session.isActive) {
-        if (session.isActive) {
-            scaffoldState.bottomSheetState.partialExpand()
-        } else {
-            scaffoldState.bottomSheetState.hide()
-        }
+        scaffoldState.bottomSheetState.partialExpand()
     }
 
     BottomSheetScaffold(
@@ -132,6 +135,16 @@ fun NowScreen(
             if (session.isActive) {
                 ActiveSessionSheet(
                     session = session,
+                    expanded = sheetExpanded,
+                    onToggleExpand = {
+                        scope.launch {
+                            if (scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded) {
+                                scaffoldState.bottomSheetState.partialExpand()
+                            } else {
+                                scaffoldState.bottomSheetState.expand()
+                            }
+                        }
+                    },
                     onAddTrack = { pickerVisible = true },
                     onRemoveTrack = { id -> session.removeTrack(id) },
                     onStop = {
@@ -310,6 +323,8 @@ private fun commitMultiTrack(
 @Composable
 private fun ActiveSessionSheet(
     session: TrackingSession,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
     onAddTrack: () -> Unit,
     onRemoveTrack: (Long) -> Unit,
     onStop: () -> Unit,
@@ -329,10 +344,13 @@ private fun ActiveSessionSheet(
     val primary = session.primaryTrack?.name ?: "未分组"
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Compact bar — the part that peeks above the fold.
+        // Compact bar — the part that peeks above the fold. Tapping anywhere on
+        // it (outside the pause/stop controls) toggles the full editor, mirroring
+        // the drag gesture so the affordance is discoverable.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onToggleExpand)
                 .padding(horizontal = 20.dp)
                 .height(64.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -345,7 +363,7 @@ private fun ActiveSessionSheet(
                         if (session.isPaused)
                             MaterialTheme.colorScheme.onSurfaceVariant
                         else
-                            MaterialTheme.colorScheme.primary
+                            trackColor(session.primaryTrack?.id ?: -1L)
                     )
             )
             Spacer(Modifier.width(12.dp))
@@ -357,7 +375,11 @@ private fun ActiveSessionSheet(
                     maxLines = 1
                 )
                 Text(
-                    text = if (session.isPaused) "已暂停" else "计时中 · ${TimeFormat.hhmm(startMs)}",
+                    text = when {
+                        session.isPaused -> "已暂停"
+                        expanded -> "计时中 · ${TimeFormat.hhmm(startMs)}"
+                        else -> "上拉填写备注与主题"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (session.isPaused)
                         MaterialTheme.colorScheme.primary
@@ -374,7 +396,14 @@ private fun ActiveSessionSheet(
                 ),
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(2.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess,
+                contentDescription = if (expanded) "收起" else "展开编辑",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(4.dp))
             CompactControl(
                 icon = if (session.isPaused) Icons.Outlined.PlayCircleOutline else Icons.Outlined.PauseCircleOutline,
                 contentDescription = if (session.isPaused) "继续" else "暂停",

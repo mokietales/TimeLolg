@@ -214,7 +214,7 @@ private fun OutlineRow(
                 Icon(
                     imageVector = Icons.Outlined.ExpandMore,
                     contentDescription = if (isCollapsed) "展开" else "收起",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = trackColor(row.trackId),
                     modifier = Modifier
                         .size(18.dp)
                         .rotate(rotation)

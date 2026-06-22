@@ -11,8 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -40,6 +43,7 @@ import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.RowDivider
 import com.mokie.timelogdemo.ui.components.SessionEditDialog
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
+import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.timeline.TimelineSession
 import com.mokie.timelogdemo.ui.timeline.collapseRows
 import com.mokie.timelogdemo.ui.util.TimeFormat
@@ -180,6 +184,13 @@ private fun SessionRow(session: TimelineSession, onClick: () -> Unit) {
             .padding(horizontal = 24.dp, vertical = 14.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(trackColor(session.headlineTrackId))
+            )
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = session.headlineTrack.ifEmpty { "未命名" },
                 style = MaterialTheme.typography.bodyLarge,
