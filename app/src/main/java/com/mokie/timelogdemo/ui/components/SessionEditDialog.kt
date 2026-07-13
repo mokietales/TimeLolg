@@ -85,8 +85,13 @@ fun SessionEditDialog(
                 .firstOrNull()
                 ?.firstOrNull { it.sessionId == sessionId }
             if (contrib != null) {
-                sessionStart = contrib.startMs
-                sessionEnd = contrib.endMs
+                // Floor to whole seconds: timer sessions carry a millisecond
+                // fraction on both endpoints. Saving writes end = start + total
+                // (whole seconds), so an unfloored start would shift the end a
+                // sub-second earlier than what the user picked — enough to
+                // display the previous minute.
+                sessionStart = (contrib.startMs / 1000L) * 1000L
+                sessionEnd = (contrib.endMs / 1000L) * 1000L
                 noteText = contrib.note
             }
         }
