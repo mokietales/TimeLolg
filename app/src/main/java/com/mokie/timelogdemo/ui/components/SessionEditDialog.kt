@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
@@ -103,8 +106,24 @@ fun SessionEditDialog(
         return
     }
 
-    val sessionTotalMs = (sessionEnd - sessionStart).coerceAtLeast(0L)
-    val saveEnabled = allocs.isNotEmpty() && allocs.sumOf { it.durationMs } == sessionTotalMs
+    // Snap to whole seconds so second-precision allocations can sum exactly.
+    val sessionTotalMs = TimeFormat.snapDurationMs(sessionEnd - sessionStart)
+    val validRange = sessionEnd > sessionStart && sessionTotalMs > 0L
+    val saveEnabled = validRange &&
+        allocs.isNotEmpty() &&
+        allocs.sumOf { it.durationMs } == sessionTotalMs
+
+    // Keep allocations consistent when the session span changes: rescale all
+    // shares proportionally to the new total so the strict-sum invariant holds
+    // without forcing the user through the allocation dialog.
+    fun applyTimes(newStart: Long, newEnd: Long) {
+        val newTotal = TimeFormat.snapDurationMs(newEnd - newStart)
+        if (newTotal > 0L && allocs.isNotEmpty()) {
+            allocs = rescaleAllocations(allocs, newTotal)
+        }
+        sessionStart = newStart
+        sessionEnd = newEnd
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -112,6 +131,11 @@ fun SessionEditDialog(
             TextButton(
                 onClick = {
                     scope.launch {
+                        sessionDao.updateSessionTimes(
+                            sessionId = sessionId,
+                            startMs = sessionStart,
+                            endMs = sessionStart + sessionTotalMs
+                        )
                         sessionDao.updateSessionNote(sessionId, noteText.trim())
                         sessionDao.replaceAllocations(
                             sessionId = sessionId,
@@ -134,17 +158,38 @@ fun SessionEditDialog(
         },
         title = { Text("编辑记录") },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 Text(
-                    text = "${TimeFormat.weekdayLong(sessionStart)} · " +
-                        "${TimeFormat.hhmm(sessionStart)} – ${TimeFormat.hhmm(sessionEnd)} · " +
-                        TimeFormat.shortDuration(sessionTotalMs),
+                    text = "时间",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                SessionTimeEditor(
+                    startMs = sessionStart,
+                    endMs = sessionEnd,
+                    onStartChange = { applyTimes(it, sessionEnd) },
+                    onEndChange = { applyTimes(sessionStart, it) }
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = if (validRange) {
+                        "时长 · ${TimeFormat.shortDuration(sessionTotalMs)}"
+                    } else {
+                        "结束时间必须晚于开始时间"
+                    },
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFeatureSettings = TabularNumFeature
                     ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (validRange) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.error
                 )
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
 
                 Text(
                     text = "备注",
@@ -363,4 +408,31 @@ fun SessionEditDialog(
             text = { Text("将永久删除此记录及其所有时间分配。") }
         )
     }
+}
+
+/**
+ * Scale allocation shares proportionally so they sum exactly to [targetMs]
+ * (at second precision). The last row absorbs rounding remainder.
+ */
+private fun rescaleAllocations(
+    allocs: List<SessionDao.SessionAllocationOf>,
+    targetMs: Long
+): List<SessionDao.SessionAllocationOf> {
+    if (allocs.isEmpty()) return allocs
+    val targetSec = targetMs / 1000L
+    val currentSum = allocs.sumOf { it.durationMs / 1000L }
+    val out = ArrayList<SessionDao.SessionAllocationOf>(allocs.size)
+    var assigned = 0L
+    for ((i, a) in allocs.withIndex()) {
+        val sec = if (i == allocs.lastIndex) {
+            (targetSec - assigned).coerceAtLeast(0L)
+        } else if (currentSum == 0L) {
+            targetSec / allocs.size
+        } else {
+            ((a.durationMs / 1000L).toDouble() / currentSum * targetSec).toLong()
+        }
+        assigned += sec
+        out.add(a.copy(durationMs = sec * 1000L))
+    }
+    return out
 }

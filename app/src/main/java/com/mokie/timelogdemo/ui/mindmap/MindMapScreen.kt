@@ -42,6 +42,7 @@ import com.mokie.timelogdemo.data.TrackEntity
 import com.mokie.timelogdemo.data.TrackTree
 import com.mokie.timelogdemo.data.observeTrackTree
 import com.mokie.timelogdemo.ui.components.EmptyState
+import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.components.TrackPickerDialog
 import com.mokie.timelogdemo.ui.theme.trackColor
@@ -74,19 +75,25 @@ fun MindMapContent(
         return
     }
 
-    if (current.tracks.isEmpty()) {
-        EmptyState(
-            title = "还没有主题",
-            subtitle = "在「现在」页创建一个主题即可开始。"
-        )
-        return
-    }
-
     val rows = remember(current, collapsed) {
         buildRows(tree = current, collapsed = collapsed)
     }
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
+        item(key = "page-title") {
+            PageTitle(
+                eyebrow = "主题结构",
+                title = "导图"
+            )
+        }
+        if (current.tracks.isEmpty()) {
+            item(key = "empty") {
+                EmptyState(
+                    title = "还没有主题",
+                    subtitle = "在「现在」页创建一个主题即可开始。"
+                )
+            }
+        }
         rows.forEach { row ->
             item(key = "${row.trackId}-${row.path}") {
                 OutlineRow(
@@ -126,6 +133,19 @@ fun MindMapContent(
                         }
                     }
                     addingChildOf = null
+                }
+            },
+            onCreate = { name, onCreated ->
+                scope.launch {
+                    val trimmed = name.trim()
+                    if (trimmed.isEmpty()) return@launch
+                    val id = trackDao.findTrackIdByName(trimmed) ?: run {
+                        trackDao.insertTrack(
+                            TrackEntity(name = trimmed, createdAtMs = System.currentTimeMillis())
+                        )
+                        trackDao.findTrackIdByName(trimmed)
+                    }
+                    if (id != null) onCreated(id, trimmed)
                 }
             }
         )
@@ -317,7 +337,8 @@ private fun AddChildDialog(
     parentId: Long,
     tree: TrackTree?,
     onDismiss: () -> Unit,
-    onConfirm: (Set<Long>) -> Unit
+    onConfirm: (Set<Long>) -> Unit,
+    onCreate: (String, (Long, String) -> Unit) -> Unit
 ) {
     if (tree == null) {
         onDismiss()
@@ -340,10 +361,6 @@ private fun AddChildDialog(
         initiallySelected = emptySet(),
         onDismiss = onDismiss,
         onConfirm = { refs -> onConfirm(refs.map { it.id }.toSet()) },
-        onCreate = { _, _ ->
-            // Adding a brand-new track and immediately parenting it requires
-            // creating it via TrackDao first. For now we keep this dialog
-            // strictly for re-parenting existing tracks.
-        }
+        onCreate = onCreate
     )
 }

@@ -101,10 +101,17 @@ fun SessionsScreen(
 
             if (filtered.isEmpty()) {
                 item {
-                    EmptyState(
-                        title = "暂无记录",
-                        subtitle = "点击 + 补录时间，或在「现在」页开始计时。"
-                    )
+                    if (sessions.isEmpty()) {
+                        EmptyState(
+                            title = "暂无记录",
+                            subtitle = "点击 + 补录时间，或在「现在」页开始计时。"
+                        )
+                    } else {
+                        EmptyState(
+                            title = "没有符合「${filter.label}」的记录",
+                            subtitle = "换一个筛选条件试试。"
+                        )
+                    }
                 }
             }
 

@@ -43,6 +43,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET note = :note WHERE id = :sessionId")
     suspend fun updateSessionNote(sessionId: Long, note: String)
 
+    @Query("UPDATE sessions SET startMs = :startMs, endMs = :endMs WHERE id = :sessionId")
+    suspend fun updateSessionTimes(sessionId: Long, startMs: Long, endMs: Long)
+
     @Query("DELETE FROM session_track_allocation WHERE sessionId = :sessionId")
     suspend fun deleteAllocationsFor(sessionId: Long)
 

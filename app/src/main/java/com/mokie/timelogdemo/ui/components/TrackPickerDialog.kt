@@ -55,7 +55,13 @@ fun TrackPickerDialog(
     var selected by remember { mutableStateOf(initiallySelected) }
     var creating by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
-    val nameById = remember(available) { available.associate { it.id to it.name } }
+    // Tracks created inline during this dialog's lifetime. Kept separately so
+    // they stay pickable even when the caller's `available` list is a one-shot
+    // snapshot that doesn't refresh after the insert.
+    var created by remember { mutableStateOf<List<TrackingSession.TrackRef>>(emptyList()) }
+    val nameById = remember(available, created) {
+        (available.map { it.id to it.name } + created.map { it.id to it.name }).toMap()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -99,6 +105,18 @@ fun TrackPickerDialog(
                         )
                     }
                 }
+                created
+                    .filter { c -> available.none { it.id == c.id } }
+                    .forEach { c ->
+                        val isSel = c.id in selected
+                        PickRow(
+                            name = c.name,
+                            selected = isSel,
+                            onClick = {
+                                selected = if (isSel) selected - c.id else selected + c.id
+                            }
+                        )
+                    }
 
                 Spacer(Modifier.height(8.dp))
 
@@ -109,7 +127,8 @@ fun TrackPickerDialog(
                         onSubmit = {
                             val n = newName.trim()
                             if (n.isNotEmpty()) {
-                                onCreate(n) { newId, _ ->
+                                onCreate(n) { newId, createdName ->
+                                    created = created + TrackingSession.TrackRef(newId, createdName)
                                     selected = selected + newId
                                     newName = ""
                                     creating = false

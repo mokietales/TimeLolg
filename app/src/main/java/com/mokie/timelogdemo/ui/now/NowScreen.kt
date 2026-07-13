@@ -89,6 +89,20 @@ fun NowScreen(
     val tree by remember(trackDao, sessionDao) {
         observeTrackTree(trackDao, sessionDao)
     }.collectAsState(initial = null)
+    val allocRows by sessionDao.observeAllAllocations().collectAsState(initial = emptyList())
+    // Today's committed time, one count per session (a multi-track session is one record).
+    val todayStats = remember(allocRows) {
+        val dayStart = TimeFormat.startOfDayMs(System.currentTimeMillis())
+        val todaySessions = allocRows
+            .filter { it.endMs >= dayStart }
+            .groupBy { it.sessionId }
+        TodayStats(
+            totalMs = todaySessions.values.sumOf { g ->
+                (g.first().endMs - g.first().startMs).coerceAtLeast(0L)
+            },
+            sessionCount = todaySessions.size
+        )
+    }
     val scope = rememberCoroutineScope()
 
     var pickerVisible by remember { mutableStateOf(false) }
@@ -175,6 +189,7 @@ fun NowScreen(
             IdleSection(
                 summaries = summaries,
                 tree = tree,
+                todayStats = todayStats,
                 timerActive = session.isActive,
                 onOpenDetail = onOpenTrackDetail,
                 onOpenStarMap = onOpenStarMap,
@@ -394,7 +409,10 @@ private fun ActiveSessionSheet(
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontFeatureSettings = TabularNumFeature
                 ),
-                color = MaterialTheme.colorScheme.onSurface
+                color = if (session.isPaused)
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                else
+                    MaterialTheme.colorScheme.onSurface
             )
             Spacer(Modifier.width(2.dp))
             Icon(
@@ -619,10 +637,14 @@ private fun CompactControl(
     )
 }
 
+/** Aggregate of sessions committed today, shown on the Now page header. */
+data class TodayStats(val totalMs: Long, val sessionCount: Int)
+
 @Composable
 private fun IdleSection(
     summaries: List<TrackSummary>,
     tree: TrackTree?,
+    todayStats: TodayStats,
     timerActive: Boolean,
     onOpenDetail: (Long) -> Unit,
     onOpenStarMap: () -> Unit,
@@ -642,17 +664,33 @@ private fun IdleSection(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
             ) {
-                Text(
-                    text = "还没有记录。",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "先开始计时，主题和备注可以边计时边补，或停止时再填。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (todayStats.sessionCount > 0) {
+                    Text(
+                        text = "今天已记录 ${TimeFormat.shortDuration(todayStats.totalMs)}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFeatureSettings = TabularNumFeature
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "共 ${todayStats.sessionCount} 条记录。继续计时，把今天补完整。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "今天还没有记录。",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "先开始计时，主题和备注可以边计时边补，或停止时再填。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Spacer(Modifier.height(20.dp))
