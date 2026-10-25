@@ -2,7 +2,6 @@ package com.mokie.timelogdemo.data
 
 import androidx.room.Dao
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
@@ -13,6 +12,9 @@ data class SessionAllocationRow(
     val sessionId: Long,
     val startMs: Long,
     val endMs: Long,
+    val pausedMs: Long,
+    /** Effective session duration (span minus paused time). */
+    val sessionDurationMs: Long,
     val note: String,
     val trackId: Long,
     val trackName: String,
@@ -24,9 +26,17 @@ data class SessionContribution(
     val sessionId: Long,
     val startMs: Long,
     val endMs: Long,
+    val sessionDurationMs: Long,
     val note: String,
     val contributedMs: Long,
     val totalAllocationsCount: Int
+)
+
+/** One allocation with its track name, for editing a single session. */
+data class SessionAllocationOf(
+    val trackId: Long,
+    val trackName: String,
+    val durationMs: Long
 )
 
 @Dao
@@ -34,59 +44,54 @@ interface SessionDao {
     @Insert
     suspend fun insertSession(session: SessionEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert
     suspend fun insertAllocation(allocation: SessionTrackAllocationEntity)
 
     @Update
     suspend fun updateSession(session: SessionEntity)
 
-    @Query("UPDATE sessions SET note = :note WHERE id = :sessionId")
-    suspend fun updateSessionNote(sessionId: Long, note: String)
-
-    @Query("UPDATE sessions SET startMs = :startMs, endMs = :endMs WHERE id = :sessionId")
-    suspend fun updateSessionTimes(sessionId: Long, startMs: Long, endMs: Long)
+    @Query("SELECT * FROM sessions WHERE id = :sessionId LIMIT 1")
+    suspend fun getSession(sessionId: Long): SessionEntity?
 
     @Query("DELETE FROM session_track_allocation WHERE sessionId = :sessionId")
     suspend fun deleteAllocationsFor(sessionId: Long)
 
+    /** Allocation rows cascade via the foreign key. */
     @Query("DELETE FROM sessions WHERE id = :sessionId")
     suspend fun deleteSession(sessionId: Long)
-
-    @Transaction
-    suspend fun deleteSessionCascade(sessionId: Long) {
-        deleteAllocationsFor(sessionId)
-        deleteSession(sessionId)
-    }
 
     @Transaction
     suspend fun insertSessionWithAllocations(
         session: SessionEntity,
         allocations: List<SessionTrackAllocationEntity>
     ): Long {
-        require(allocations.isNotEmpty()) { "session must have at least one allocation" }
-        val sum = allocations.sumOf { it.durationMs }
-        val want = session.durationMs
-        require(sum == want) {
-            "allocations sum ($sum ms) must equal session duration ($want ms)"
-        }
+        requireBalanced(session, allocations)
         val sessionId = insertSession(session)
-        allocations.forEach { a ->
-            insertAllocation(a.copy(sessionId = sessionId))
-        }
+        allocations.forEach { a -> insertAllocation(a.copy(sessionId = sessionId)) }
         return sessionId
     }
 
     @Transaction
-    suspend fun replaceAllocations(
-        sessionId: Long,
+    suspend fun updateSessionWithAllocations(
+        session: SessionEntity,
         allocations: List<SessionTrackAllocationEntity>
     ) {
-        require(allocations.isNotEmpty()) { "must have at least one allocation" }
-        deleteAllocationsFor(sessionId)
-        allocations.forEach { a ->
-            insertAllocation(a.copy(sessionId = sessionId))
-        }
+        requireBalanced(session, allocations)
+        updateSession(session)
+        deleteAllocationsFor(session.id)
+        allocations.forEach { a -> insertAllocation(a.copy(sessionId = session.id)) }
     }
+
+    /** Every allocation row of every session that has at least one allocation on [trackId]. */
+    @Query(
+        """
+        SELECT * FROM session_track_allocation
+        WHERE sessionId IN (
+            SELECT sessionId FROM session_track_allocation WHERE trackId = :trackId
+        )
+        """
+    )
+    suspend fun getAllocationsOfSessionsTouching(trackId: Long): List<SessionTrackAllocationEntity>
 
     @Query("SELECT trackId, durationMs FROM session_track_allocation")
     fun observeAllocationsLight(): Flow<List<TrackTree.SessionTrackAllocationOnly>>
@@ -96,6 +101,8 @@ interface SessionDao {
         SELECT s.id        AS sessionId,
                s.startMs   AS startMs,
                s.endMs     AS endMs,
+               s.pausedMs  AS pausedMs,
+               (s.endMs - s.startMs - s.pausedMs) AS sessionDurationMs,
                s.note      AS note,
                a.trackId   AS trackId,
                t.name      AS trackName,
@@ -113,6 +120,7 @@ interface SessionDao {
         SELECT a.sessionId    AS sessionId,
                s.startMs      AS startMs,
                s.endMs        AS endMs,
+               (s.endMs - s.startMs - s.pausedMs) AS sessionDurationMs,
                s.note         AS note,
                a.durationMs   AS contributedMs,
                (SELECT COUNT(*) FROM session_track_allocation a2 WHERE a2.sessionId = s.id)
@@ -135,10 +143,15 @@ interface SessionDao {
         """
     )
     suspend fun getAllocationsForSession(sessionId: Long): List<SessionAllocationOf>
+}
 
-    data class SessionAllocationOf(
-        val trackId: Long,
-        val trackName: String,
-        val durationMs: Long
-    )
+private fun requireBalanced(
+    session: SessionEntity,
+    allocations: List<SessionTrackAllocationEntity>
+) {
+    require(allocations.isNotEmpty()) { "session must have at least one allocation" }
+    val sum = allocations.sumOf { it.durationMs }
+    require(sum == session.durationMs) {
+        "allocations sum ($sum ms) must equal session duration (${session.durationMs} ms)"
+    }
 }

@@ -53,15 +53,12 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.SessionEntity
-import com.mokie.timelogdemo.data.SessionTrackAllocationEntity
-import com.mokie.timelogdemo.data.TrackDao
-import com.mokie.timelogdemo.data.TrackEntity
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.mokie.timelogdemo.data.TimeLogRepository
 import com.mokie.timelogdemo.data.TrackSummary
 import com.mokie.timelogdemo.data.TrackTree
-import com.mokie.timelogdemo.data.observeTrackTree
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.components.AllocationDialog
 import com.mokie.timelogdemo.ui.components.InsetGroup
 import com.mokie.timelogdemo.ui.components.PageTitle
@@ -70,6 +67,7 @@ import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.components.TrackPickerDialog
 import com.mokie.timelogdemo.ui.theme.trackColor
 import com.mokie.timelogdemo.ui.util.TimeFormat
+import com.mokie.timelogdemo.ui.util.rememberDayStart
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -79,27 +77,25 @@ private val TIMER_PEEK_HEIGHT = 116.dp
 @Composable
 fun NowScreen(
     session: TrackingSession,
-    trackDao: TrackDao,
-    sessionDao: SessionDao,
+    repository: TimeLogRepository,
+    stopRequested: Boolean,
+    onStopRequestHandled: () -> Unit,
     onOpenTrackDetail: (Long) -> Unit,
     onOpenStarMap: () -> Unit
 ) {
-    val summaries by trackDao.observeTrackSummaries().collectAsState(initial = emptyList())
-    val allTracks by trackDao.observeTracks().collectAsState(initial = emptyList())
-    val tree by remember(trackDao, sessionDao) {
-        observeTrackTree(trackDao, sessionDao)
-    }.collectAsState(initial = null)
-    val allocRows by sessionDao.observeAllAllocations().collectAsState(initial = emptyList())
+    val context = LocalContext.current
+    val summaries by repository.trackSummaries.collectAsState(initial = emptyList())
+    val allTracks by repository.tracks.collectAsState(initial = emptyList())
+    val tree by repository.trackTree.collectAsState()
+    val allocRows by repository.sessionRows.collectAsState(initial = emptyList())
+    val dayStart = rememberDayStart()
     // Today's committed time, one count per session (a multi-track session is one record).
-    val todayStats = remember(allocRows) {
-        val dayStart = TimeFormat.startOfDayMs(System.currentTimeMillis())
+    val todayStats = remember(allocRows, dayStart) {
         val todaySessions = allocRows
             .filter { it.endMs >= dayStart }
             .groupBy { it.sessionId }
         TodayStats(
-            totalMs = todaySessions.values.sumOf { g ->
-                (g.first().endMs - g.first().startMs).coerceAtLeast(0L)
-            },
+            totalMs = todaySessions.values.sumOf { g -> g.first().sessionDurationMs },
             sessionCount = todaySessions.size
         )
     }
@@ -110,14 +106,32 @@ fun NowScreen(
     // Shown when the user stops a blank (theme-less) session: pick a theme, then commit.
     var stopPickVisible by remember { mutableStateOf(false) }
 
+    fun commit(snap: TrackingSession.StopSnapshot, allocMs: Map<Long, Long>) {
+        scope.launch {
+            if (!repository.commitTimer(snap, allocMs)) {
+                Toast.makeText(context, "保存失败，计时仍在继续", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun finishStop() {
         session.snapshotForStop()?.let { snap ->
             if (snap.tracks.size == 1) {
-                commitSingleTrack(scope, sessionDao, snap)
-                session.clear()
+                commit(snap, mapOf(snap.tracks.single().id to snap.effectiveDurationMs))
             } else {
                 pendingStop = snap
             }
+        }
+    }
+
+    fun requestStop() {
+        if (session.tracks.isEmpty()) stopPickVisible = true else finishStop()
+    }
+
+    LaunchedEffect(stopRequested) {
+        if (stopRequested) {
+            onStopRequestHandled()
+            if (session.isActive) requestStop()
         }
     }
 
@@ -161,13 +175,7 @@ fun NowScreen(
                     },
                     onAddTrack = { pickerVisible = true },
                     onRemoveTrack = { id -> session.removeTrack(id) },
-                    onStop = {
-                        if (session.tracks.isEmpty()) {
-                            stopPickVisible = true
-                        } else {
-                            finishStop()
-                        }
-                    },
+                    onStop = { requestStop() },
                     onCancel = { session.clear() }
                 )
             } else {
@@ -182,7 +190,7 @@ fun NowScreen(
                 .verticalScroll(rememberScrollState())
         ) {
             PageTitle(
-                eyebrow = TimeFormat.weekdayLong(System.currentTimeMillis()),
+                eyebrow = TimeFormat.weekdayLong(dayStart),
                 title = "现在"
             )
 
@@ -199,7 +207,7 @@ fun NowScreen(
                 },
                 onCreateTrack = { name ->
                     scope.launch {
-                        ensureTrackId(trackDao, name)?.let { onOpenTrackDetail(it) }
+                        repository.ensureTrack(name)?.let { onOpenTrackDetail(it.id) }
                     }
                 }
             )
@@ -220,11 +228,7 @@ fun NowScreen(
             },
             onCreate = { name, onCreated ->
                 scope.launch {
-                    val newId = ensureTrackId(trackDao, name)
-                    val entity = newId?.let { id -> trackDao.findTrackById(id) }
-                    if (newId != null && entity != null) {
-                        onCreated(newId, entity.name)
-                    }
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -245,11 +249,7 @@ fun NowScreen(
             },
             onCreate = { name, onCreated ->
                 scope.launch {
-                    val newId = ensureTrackId(trackDao, name)
-                    val entity = newId?.let { id -> trackDao.findTrackById(id) }
-                    if (newId != null && entity != null) {
-                        onCreated(newId, entity.name)
-                    }
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -263,69 +263,9 @@ fun NowScreen(
             initial = null,
             onDismiss = { pendingStop = null },
             onConfirm = { allocMap ->
-                commitMultiTrack(scope, sessionDao, snap, allocMap)
-                session.clear()
                 pendingStop = null
+                commit(snap, allocMap)
             }
-        )
-    }
-}
-
-private suspend fun ensureTrackId(trackDao: TrackDao, name: String): Long? {
-    val trimmed = name.trim()
-    if (trimmed.isEmpty()) return null
-    val existing = trackDao.findTrackIdByName(trimmed)
-    if (existing != null) return existing
-    trackDao.insertTrack(TrackEntity(name = trimmed, createdAtMs = System.currentTimeMillis()))
-    return trackDao.findTrackIdByName(trimmed)
-}
-
-private fun commitSingleTrack(
-    scope: kotlinx.coroutines.CoroutineScope,
-    sessionDao: SessionDao,
-    snap: TrackingSession.StopSnapshot
-) {
-    if (snap.effectiveDurationMs <= 0L) return
-    val track = snap.tracks.single()
-    scope.launch {
-        sessionDao.insertSessionWithAllocations(
-            session = SessionEntity(
-                startMs = snap.startMs,
-                endMs = snap.startMs + snap.effectiveDurationMs,
-                note = snap.note.trim(),
-                createdAtMs = System.currentTimeMillis()
-            ),
-            allocations = listOf(
-                SessionTrackAllocationEntity(
-                    sessionId = 0L,
-                    trackId = track.id,
-                    durationMs = snap.effectiveDurationMs
-                )
-            )
-        )
-    }
-}
-
-private fun commitMultiTrack(
-    scope: kotlinx.coroutines.CoroutineScope,
-    sessionDao: SessionDao,
-    snap: TrackingSession.StopSnapshot,
-    allocMap: Map<Long, Long>
-) {
-    val effective = snap.effectiveDurationMs
-    if (effective <= 0L) return
-    val allocs = allocMap.map { (trackId, ms) ->
-        SessionTrackAllocationEntity(sessionId = 0L, trackId = trackId, durationMs = ms)
-    }
-    scope.launch {
-        sessionDao.insertSessionWithAllocations(
-            session = SessionEntity(
-                startMs = snap.startMs,
-                endMs = snap.startMs + effective,
-                note = snap.note.trim(),
-                createdAtMs = System.currentTimeMillis()
-            ),
-            allocations = allocs
         )
     }
 }
@@ -666,7 +606,7 @@ private fun IdleSection(
             ) {
                 if (todayStats.sessionCount > 0) {
                     Text(
-                        text = "今天已记录 ${TimeFormat.shortDuration(todayStats.totalMs)}",
+                        text = "今天已记录 ${TimeFormat.duration(todayStats.totalMs)}",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontFeatureSettings = TabularNumFeature
                         ),
@@ -923,10 +863,10 @@ private fun TrackSummaryRow(
             val sub = when {
                 rolledUpMs <= 0L && item.sessionCount == 0 -> "暂无记录"
                 descendantCount > 0 -> {
-                    "${TimeFormat.shortDuration(rolledUpMs)} · 含 $descendantCount 个子主题"
+                    "${TimeFormat.duration(rolledUpMs)} · 含 $descendantCount 个子主题"
                 }
                 else -> {
-                    "${TimeFormat.shortDuration(rolledUpMs)} · ${item.sessionCount} 条记录"
+                    "${TimeFormat.duration(rolledUpMs)} · ${item.sessionCount} 条记录"
                 }
             }
             Text(

@@ -34,7 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.data.Allocation
+import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.util.TimeFormat
 
 /**
@@ -70,13 +71,9 @@ fun AllocationDialog(
         if (keysMatch) {
             val raw = tracks.map { (initial!![it.id] ?: 0L) / 1000L }
             val s = raw.sum()
-            when {
-                s == totalSec -> raw
-                s == 0L -> evenSplit(totalSec, tracks.size)
-                else -> proportionalScale(raw, totalSec)
-            }
+            if (s == totalSec) raw else Allocation.proportionalScale(raw, totalSec)
         } else {
-            evenSplit(totalSec, tracks.size)
+            Allocation.evenSplit(totalSec, tracks.size)
         }
     }
 
@@ -89,7 +86,7 @@ fun AllocationDialog(
     }
 
     fun resetEven() {
-        val seed = evenSplit(totalSec, tracks.size)
+        val seed = Allocation.evenSplit(totalSec, tracks.size)
         values.clear()
         values.addAll(seed)
     }
@@ -122,7 +119,7 @@ fun AllocationDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "总计 ${TimeFormat.clockSeconds(totalSec)}",
+                        text = "总计 ${TimeFormat.durationPrecise(totalSec * 1000L)}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFeatureSettings = TabularNumFeature
                         ),
@@ -180,7 +177,7 @@ private fun AllocationSliderRow(
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = TimeFormat.clockSeconds(valueSec),
+                text = TimeFormat.durationPrecise(valueSec * 1000L),
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontFeatureSettings = TabularNumFeature,
                     fontWeight = FontWeight.SemiBold
@@ -213,29 +210,6 @@ private fun AllocationSliderRow(
             modifier = Modifier.fillMaxWidth()
         )
     }
-}
-
-/** Even split with the remainder added to the first N tracks (one per track). */
-private fun evenSplit(totalSec: Long, count: Int): List<Long> {
-    if (count <= 0) return emptyList()
-    val per = totalSec / count
-    val rem = (totalSec % count).toInt()
-    return List(count) { i -> per + if (i < rem) 1L else 0L }
-}
-
-/** Scale a list of non-negative seconds to sum exactly [target], preserving ratios. */
-private fun proportionalScale(values: List<Long>, target: Long): List<Long> {
-    val s = values.sum()
-    if (s == 0L) return evenSplit(target, values.size)
-    var assigned = 0L
-    val out = LongArray(values.size)
-    for (k in 0 until values.size - 1) {
-        val share = (values[k].toDouble() / s * target).toLong().coerceAtLeast(0L)
-        out[k] = share
-        assigned += share
-    }
-    out[values.size - 1] = (target - assigned).coerceAtLeast(0L)
-    return out.toList()
 }
 
 /**

@@ -1,4 +1,4 @@
-package com.mokie.timelogdemo.ui
+package com.mokie.timelogdemo.tracking
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -6,15 +6,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * In-memory + SharedPreferences-backed state for the currently-running tracking session.
+ * One app-wide instance, owned by TimeLogApplication. Mutate on the main thread.
  *
- * One session at a time. While active, the session may be associated with one or more Tracks
- * (multi-Track selection). When stopped, time is committed as a SessionEntity plus
- * SessionTrackAllocation rows whose durationMs sums to the session's effective duration.
+ * One session at a time. While active, the session may be associated with zero or more
+ * Tracks. When stopped, time is committed as a SessionEntity plus SessionTrackAllocation
+ * rows whose durationMs sums to the session's effective duration.
  */
 class TrackingSession(context: Context) {
 
@@ -30,12 +33,20 @@ class TrackingSession(context: Context) {
         private set
 
     var note by mutableStateOf(prefs.getString(KEY_NOTE, "") ?: "")
+        private set
 
     var pausedAtMs by mutableStateOf(prefs.getLong(KEY_PAUSED_AT, 0L).takeIf { it > 0L })
         private set
 
     private var _pausedAccMs by mutableLongStateOf(prefs.getLong(KEY_PAUSED_ACC, 0L))
-    val pausedAccumulatedMs: Long get() = _pausedAccMs
+
+    private val _changes = MutableStateFlow(0L)
+
+    /**
+     * Ticks whenever start / tracks / pause state change (not on note edits).
+     * Observed outside Compose, e.g. by the ongoing-notification controller.
+     */
+    val changes: StateFlow<Long> = _changes
 
     val isActive: Boolean get() = startMs != null
     val isPaused: Boolean get() = pausedAtMs != null
@@ -48,38 +59,27 @@ class TrackingSession(context: Context) {
         return ((nowMs - s) - _pausedAccMs - pausedWindow).coerceAtLeast(0L)
     }
 
-    fun start(track: TrackRef) {
-        startMs = System.currentTimeMillis()
-        tracks = listOf(track)
-        pausedAtMs = null
-        _pausedAccMs = 0L
-        note = ""
-        flush()
-    }
+    fun start(track: TrackRef) = begin(listOf(track))
 
     /**
      * Start timing immediately with no theme attached. The theme(s), note, etc.
      * can be filled in while running or when stopping. A theme must be chosen
      * before the session can be committed (enforced at stop).
      */
-    fun startBlank() {
+    fun startBlank() = begin(emptyList())
+
+    private fun begin(initial: List<TrackRef>) {
         startMs = System.currentTimeMillis()
-        tracks = emptyList()
+        tracks = initial
         pausedAtMs = null
         _pausedAccMs = 0L
         note = ""
         flush()
     }
 
-    fun addTrack(track: TrackRef) {
-        if (tracks.any { it.id == track.id }) return
-        tracks = tracks + track
-        flush()
-    }
-
     fun removeTrack(trackId: Long) {
         val next = tracks.filterNot { it.id == trackId }
-        if (next.isEmpty()) return // never empty while active
+        if (next.isEmpty()) return // the user can't remove the last one by hand
         tracks = next
         flush()
     }
@@ -90,12 +90,27 @@ class TrackingSession(context: Context) {
         flush()
     }
 
+    /** The track no longer exists; drop it even if that leaves the session theme-less. */
+    fun onTrackDeleted(trackId: Long) {
+        if (tracks.none { it.id == trackId }) return
+        tracks = tracks.filterNot { it.id == trackId }
+        flush()
+    }
+
+    fun onTrackRenamed(trackId: Long, newName: String) {
+        if (tracks.none { it.id == trackId }) return
+        tracks = tracks.map { if (it.id == trackId) it.copy(name = newName) else it }
+        flush()
+    }
+
     fun togglePause() {
+        if (!isActive) return
         val now = System.currentTimeMillis()
-        if (pausedAtMs == null) {
+        val pausedAt = pausedAtMs
+        if (pausedAt == null) {
             pausedAtMs = now
         } else {
-            _pausedAccMs += (now - pausedAtMs!!).coerceAtLeast(0L)
+            _pausedAccMs += (now - pausedAt).coerceAtLeast(0L)
             pausedAtMs = null
         }
         flush()
@@ -106,7 +121,7 @@ class TrackingSession(context: Context) {
         prefs.edit().putString(KEY_NOTE, value).apply()
     }
 
-    /** Stop, but do NOT clear state yet — caller may need to show an allocation dialog first. */
+    /** Capture the session for committing, without clearing it. Null if not committable yet. */
     fun snapshotForStop(): StopSnapshot? {
         val s = startMs ?: return null
         if (tracks.isEmpty()) return null
@@ -128,6 +143,12 @@ class TrackingSession(context: Context) {
         pausedAtMs = null
         _pausedAccMs = 0L
         prefs.edit().clear().apply()
+        _changes.value++
+    }
+
+    /** Clear only if the running session is still the one that was snapshotted. */
+    fun clearIfStartedAt(snapshotStartMs: Long) {
+        if (startMs == snapshotStartMs) clear()
     }
 
     private fun flush() {
@@ -138,10 +159,17 @@ class TrackingSession(context: Context) {
             pausedAtMs?.let { putLong(KEY_PAUSED_AT, it) } ?: remove(KEY_PAUSED_AT)
             putLong(KEY_PAUSED_ACC, _pausedAccMs)
         }.apply()
+        _changes.value++
     }
 
     private fun readTracks(): List<TrackRef> = decodeTracks(prefs.getString(KEY_TRACKS, null))
 
+    /**
+     * A frozen view of the session at stop time. Bounds are floored to whole seconds
+     * and the effective duration is snapped to whole seconds, so the per-track
+     * allocation sliders (second precision) can sum exactly to the persisted duration.
+     * The real end time is kept; paused time is recorded separately as [sessionPausedMs].
+     */
     data class StopSnapshot(
         val startMs: Long,
         val endMs: Long,
@@ -149,17 +177,16 @@ class TrackingSession(context: Context) {
         val tracks: List<TrackRef>,
         val pausedAccumulatedMs: Long
     ) {
-        /**
-         * Effective duration to be apportioned across tracks (paused time subtracted),
-         * snapped to whole seconds. Snapping is required so that the per-track allocation
-         * sliders — which operate at second precision — can produce a sum exactly equal
-         * to the persisted session duration. The DAO enforces this invariant strictly.
-         */
+        val sessionStartMs: Long get() = floorSec(startMs)
+        val sessionEndMs: Long get() = floorSec(endMs)
+
         val effectiveDurationMs: Long
-            get() {
-                val raw = ((endMs - startMs) - pausedAccumulatedMs).coerceAtLeast(0L)
-                return (raw / 1000L) * 1000L
-            }
+            get() = floorSec(
+                ((sessionEndMs - sessionStartMs) - pausedAccumulatedMs).coerceAtLeast(0L)
+            )
+
+        val sessionPausedMs: Long
+            get() = (sessionEndMs - sessionStartMs) - effectiveDurationMs
     }
 
     companion object {
@@ -169,6 +196,8 @@ class TrackingSession(context: Context) {
         private const val KEY_NOTE = "note"
         private const val KEY_PAUSED_AT = "paused_at"
         private const val KEY_PAUSED_ACC = "paused_acc"
+
+        private fun floorSec(ms: Long): Long = (ms / 1000L) * 1000L
 
         private fun encodeTracks(list: List<TrackRef>): String {
             val arr = JSONArray()

@@ -25,39 +25,23 @@ interface TrackDao {
     @Query("SELECT id FROM tracks WHERE name = :name LIMIT 1")
     suspend fun findTrackIdByName(name: String): Long?
 
+    @Query("SELECT id FROM tracks WHERE id IN (:ids)")
+    suspend fun existingIds(ids: List<Long>): List<Long>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTrack(track: TrackEntity): Long
 
     @Query("UPDATE tracks SET name = :newName WHERE id = :id")
     suspend fun renameTrack(id: Long, newName: String)
 
+    /** Inheritance edges and allocations cascade via foreign keys. */
     @Query("DELETE FROM tracks WHERE id = :id")
     suspend fun deleteTrack(id: Long)
-
-    @Query("DELETE FROM track_inheritance WHERE childTrackId = :id OR parentTrackId = :id")
-    suspend fun deleteInheritanceTouching(id: Long)
-
-    @Query("DELETE FROM session_track_allocation WHERE trackId = :id")
-    suspend fun deleteAllocationsOfTrack(id: Long)
-
-    @androidx.room.Transaction
-    suspend fun deleteTrackCascade(id: Long) {
-        // Children lose this parent edge but remain (becoming roots if it was their
-        // only parent). All allocations referencing this track are removed; sessions
-        // that lose all their allocations as a consequence are NOT auto-deleted —
-        // they remain as orphan sessions a future cleanup job can reap.
-        deleteInheritanceTouching(id)
-        deleteAllocationsOfTrack(id)
-        deleteTrack(id)
-    }
 
     // ----- DAG inheritance -----
 
     @Query("SELECT * FROM track_inheritance")
     fun observeInheritance(): Flow<List<TrackInheritanceEntity>>
-
-    @Query("SELECT * FROM track_inheritance")
-    suspend fun getAllInheritance(): List<TrackInheritanceEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertInheritance(edge: TrackInheritanceEntity)

@@ -36,11 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.TrackDao
-import com.mokie.timelogdemo.data.TrackEntity
+import com.mokie.timelogdemo.data.TimeLogRepository
 import com.mokie.timelogdemo.data.TrackTree
-import com.mokie.timelogdemo.data.observeTrackTree
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.PageTitle
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
@@ -50,21 +47,21 @@ import com.mokie.timelogdemo.ui.util.TimeFormat
 import kotlinx.coroutines.launch
 
 /**
- * Indented outliner over the Track DAG, designed to be embedded as a section
- * (e.g. the Review tab's "Mind map" mode). A node with multiple parents appears
- * under each — annotated with an "↗ N" badge so the user knows it's shared.
+ * The 导图 tab: an indented outliner over the Track DAG. A node with multiple
+ * parents appears under each — annotated with an "↗ N" badge so the user knows
+ * it's shared.
  *
  * Each row's right-hand number is the rolled-up total (self + deduped
  * descendants), so glancing at the tree gives an answer to "how much total
  * time does this branch hold".
  */
 @Composable
-fun MindMapContent(
-    tree: TrackTree?,
-    trackDao: TrackDao,
+fun MindMapScreen(
+    repository: TimeLogRepository,
     onOpenTrackDetail: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val tree by repository.trackTree.collectAsState()
     var collapsed by rememberSaveable { mutableStateOf(emptySet<Long>()) }
     var addingChildOf by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
@@ -124,12 +121,7 @@ fun MindMapContent(
                 scope.launch {
                     childIds.forEach { childId ->
                         if (current.canAddParent(childId, parentId)) {
-                            trackDao.insertInheritance(
-                                com.mokie.timelogdemo.data.TrackInheritanceEntity(
-                                    childTrackId = childId,
-                                    parentTrackId = parentId
-                                )
-                            )
+                            repository.addParent(childId = childId, parentId = parentId)
                         }
                     }
                     addingChildOf = null
@@ -137,15 +129,7 @@ fun MindMapContent(
             },
             onCreate = { name, onCreated ->
                 scope.launch {
-                    val trimmed = name.trim()
-                    if (trimmed.isEmpty()) return@launch
-                    val id = trackDao.findTrackIdByName(trimmed) ?: run {
-                        trackDao.insertTrack(
-                            TrackEntity(name = trimmed, createdAtMs = System.currentTimeMillis())
-                        )
-                        trackDao.findTrackIdByName(trimmed)
-                    }
-                    if (id != null) onCreated(id, trimmed)
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -288,7 +272,7 @@ private fun OutlineRow(
                 )
             }
             Text(
-                text = if (totalMs > 0L) TimeFormat.shortDuration(totalMs) else "—",
+                text = if (totalMs > 0L) TimeFormat.duration(totalMs) else "—",
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFeatureSettings = TabularNumFeature
                 ),

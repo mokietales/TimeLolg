@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
         SessionEntity::class,
         SessionTrackAllocationEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class TimeLogDatabase : RoomDatabase() {

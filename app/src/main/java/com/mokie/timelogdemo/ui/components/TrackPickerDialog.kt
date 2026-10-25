@@ -37,7 +37,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mokie.timelogdemo.data.TrackEntity
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.tracking.TrackingSession
 
 /**
  * Multi-select dialog for picking which Tracks a session is associated with.

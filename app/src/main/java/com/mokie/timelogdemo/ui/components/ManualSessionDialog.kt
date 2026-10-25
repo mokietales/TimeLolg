@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,14 +33,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.SessionEntity
-import com.mokie.timelogdemo.data.SessionTrackAllocationEntity
-import com.mokie.timelogdemo.data.TrackDao
-import com.mokie.timelogdemo.data.TrackEntity
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.data.TimeLogRepository
+import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.util.TimeFormat
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 
 /**
@@ -48,8 +44,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ManualSessionDialog(
-    sessionDao: SessionDao,
-    trackDao: TrackDao,
+    repository: TimeLogRepository,
     initialTrackId: Long? = null,
     onDismiss: () -> Unit,
     onSaved: () -> Unit = onDismiss
@@ -63,16 +58,14 @@ fun ManualSessionDialog(
     var endMs by remember { mutableStateOf(defaultEnd) }
     var noteText by remember { mutableStateOf("") }
     var selectedTracks by remember { mutableStateOf<List<TrackingSession.TrackRef>>(emptyList()) }
-    var allTracks by remember { mutableStateOf<List<TrackEntity>>(emptyList()) }
+    val allTracks by repository.tracks.collectAsState(initial = emptyList())
     var trackPickerVisible by remember { mutableStateOf(false) }
     var allocDialogVisible by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        allTracks = trackDao.observeTracks().firstOrNull().orEmpty()
-        if (initialTrackId != null && selectedTracks.isEmpty()) {
-            allTracks.find { it.id == initialTrackId }?.let { t ->
-                selectedTracks = listOf(TrackingSession.TrackRef(t.id, t.name))
-            }
+    LaunchedEffect(initialTrackId) {
+        val t = initialTrackId?.let { repository.findTrack(it) } ?: return@LaunchedEffect
+        if (selectedTracks.isEmpty()) {
+            selectedTracks = listOf(TrackingSession.TrackRef(t.id, t.name))
         }
     }
 
@@ -82,26 +75,29 @@ fun ManualSessionDialog(
     val validRange = endMs > startMs && durationMs > 0L
     val canSave = validRange && selectedTracks.isNotEmpty()
 
+    fun save(allocMap: Map<Long, Long>) {
+        scope.launch {
+            val ok = repository.insertManualSession(
+                startMs = startMs,
+                durationMs = durationMs,
+                note = noteText,
+                allocMs = allocMap
+            )
+            allocDialogVisible = false
+            if (ok) onSaved()
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
                 onClick = {
                     if (!canSave) return@TextButton
-                    when {
-                        selectedTracks.size == 1 -> {
-                            scope.launch {
-                                insertManualSession(
-                                    sessionDao = sessionDao,
-                                    startMs = startMs,
-                                    durationMs = durationMs,
-                                    note = noteText,
-                                    allocMap = mapOf(selectedTracks.single().id to durationMs)
-                                )
-                                onSaved()
-                            }
-                        }
-                        else -> allocDialogVisible = true
+                    if (selectedTracks.size == 1) {
+                        save(mapOf(selectedTracks.single().id to durationMs))
+                    } else {
+                        allocDialogVisible = true
                     }
                 },
                 enabled = canSave
@@ -130,7 +126,7 @@ fun ManualSessionDialog(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = if (validRange) {
-                        "时长 · ${TimeFormat.shortDuration(durationMs)}"
+                        "时长 · ${TimeFormat.durationPrecise(durationMs)}"
                     } else {
                         "结束时间必须晚于开始时间"
                     },
@@ -233,16 +229,7 @@ fun ManualSessionDialog(
             },
             onCreate = { name, onCreated ->
                 scope.launch {
-                    val trimmed = name.trim()
-                    if (trimmed.isEmpty()) return@launch
-                    val existing = trackDao.findTrackIdByName(trimmed)
-                    val id = existing ?: run {
-                        trackDao.insertTrack(
-                            TrackEntity(name = trimmed, createdAtMs = System.currentTimeMillis())
-                        )
-                        trackDao.findTrackIdByName(trimmed)
-                    }
-                    if (id != null) onCreated(id, trimmed)
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -255,19 +242,7 @@ fun ManualSessionDialog(
             tracks = selectedTracks,
             initial = null,
             onDismiss = { allocDialogVisible = false },
-            onConfirm = { allocMap ->
-                scope.launch {
-                    insertManualSession(
-                        sessionDao = sessionDao,
-                        startMs = startMs,
-                        durationMs = durationMs,
-                        note = noteText,
-                        allocMap = allocMap
-                    )
-                    allocDialogVisible = false
-                    onSaved()
-                }
-            }
+            onConfirm = { allocMap -> save(allocMap) }
         )
     }
 }
@@ -300,26 +275,4 @@ private fun DurationPresets(onSelectDuration: (Long) -> Unit) {
             )
         }
     }
-}
-
-private suspend fun insertManualSession(
-    sessionDao: SessionDao,
-    startMs: Long,
-    durationMs: Long,
-    note: String,
-    allocMap: Map<Long, Long>
-) {
-    if (durationMs <= 0L || allocMap.isEmpty()) return
-    val allocations = allocMap.map { (trackId, ms) ->
-        SessionTrackAllocationEntity(sessionId = 0L, trackId = trackId, durationMs = ms)
-    }
-    sessionDao.insertSessionWithAllocations(
-        session = SessionEntity(
-            startMs = startMs,
-            endMs = startMs + durationMs,
-            note = note.trim(),
-            createdAtMs = System.currentTimeMillis()
-        ),
-        allocations = allocations
-    )
 }

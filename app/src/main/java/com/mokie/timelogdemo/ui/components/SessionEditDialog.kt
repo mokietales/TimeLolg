@@ -1,6 +1,5 @@
 package com.mokie.timelogdemo.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,67 +38,59 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.SessionTrackAllocationEntity
-import com.mokie.timelogdemo.data.TrackDao
-import com.mokie.timelogdemo.data.TrackEntity
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.data.Allocation
+import com.mokie.timelogdemo.data.SessionAllocationOf
+import com.mokie.timelogdemo.data.SessionEntity
+import com.mokie.timelogdemo.data.TimeLogRepository
+import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.util.TimeFormat
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 
 /**
  * Shared session-edit dialog. Lets the user:
+ *  - Move the start/end time (allocations rescale to keep the strict sum)
  *  - Edit the session note
- *  - Add/remove track allocations
- *  - Re-apportion durations across tracks (strict sum)
- *  - Delete the entire session
+ *  - Add/remove track allocations and rebalance them
+ *  - Delete the session
  *
  * Used from TrackDetail and from the Sessions tab.
  */
 @Composable
 fun SessionEditDialog(
     sessionId: Long,
-    sessionDao: SessionDao,
-    trackDao: TrackDao,
+    repository: TimeLogRepository,
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var loaded by remember(sessionId) { mutableStateOf(false) }
+    var original by remember(sessionId) { mutableStateOf<SessionEntity?>(null) }
     var noteText by remember(sessionId) { mutableStateOf("") }
     var sessionStart by remember(sessionId) { mutableStateOf(0L) }
     var sessionEnd by remember(sessionId) { mutableStateOf(0L) }
-    var allocs by remember(sessionId) {
-        mutableStateOf<List<SessionDao.SessionAllocationOf>>(emptyList())
-    }
-    var allTracks by remember { mutableStateOf<List<TrackEntity>>(emptyList()) }
+    var pausedMs by remember(sessionId) { mutableStateOf(0L) }
+    var allocs by remember(sessionId) { mutableStateOf<List<SessionAllocationOf>>(emptyList()) }
+    val allTracks by repository.tracks.collectAsState(initial = emptyList())
     var pickerVisible by remember { mutableStateOf(false) }
     var allocDialogVisible by remember { mutableStateOf(false) }
     var askDelete by remember { mutableStateOf(false) }
+    var saveFailed by remember { mutableStateOf(false) }
 
     LaunchedEffect(sessionId) {
-        allocs = sessionDao.getAllocationsForSession(sessionId)
-        allTracks = trackDao.observeTracks().firstOrNull().orEmpty()
-        allocs.firstOrNull()?.let { first ->
-            val contrib = sessionDao
-                .observeContributionsForTrack(first.trackId)
-                .firstOrNull()
-                ?.firstOrNull { it.sessionId == sessionId }
-            if (contrib != null) {
-                // Floor to whole seconds: timer sessions carry a millisecond
-                // fraction on both endpoints. Saving writes end = start + total
-                // (whole seconds), so an unfloored start would shift the end a
-                // sub-second earlier than what the user picked — enough to
-                // display the previous minute.
-                sessionStart = (contrib.startMs / 1000L) * 1000L
-                sessionEnd = (contrib.endMs / 1000L) * 1000L
-                noteText = contrib.note
-            }
+        val loaded = repository.sessionForEdit(sessionId)
+        if (loaded == null) {
+            onDismiss()
+            return@LaunchedEffect
         }
-        loaded = true
+        // Floor to whole seconds so second-precision allocations can sum exactly.
+        sessionStart = (loaded.session.startMs / 1000L) * 1000L
+        sessionEnd = (loaded.session.endMs / 1000L) * 1000L
+        pausedMs = (loaded.session.pausedMs / 1000L) * 1000L
+        noteText = loaded.session.note
+        allocs = loaded.allocations
+        original = loaded.session
     }
 
-    if (!loaded) {
+    val base = original
+    if (base == null) {
         AlertDialog(
             onDismissRequest = onDismiss,
             confirmButton = {},
@@ -111,20 +103,25 @@ fun SessionEditDialog(
         return
     }
 
-    // Snap to whole seconds so second-precision allocations can sum exactly.
-    val sessionTotalMs = TimeFormat.snapDurationMs(sessionEnd - sessionStart)
+    fun totalFor(start: Long, end: Long): Long {
+        val span = (end - start).coerceAtLeast(0L)
+        return TimeFormat.snapDurationMs(span - pausedMs.coerceAtMost(span))
+    }
+
+    val sessionTotalMs = totalFor(sessionStart, sessionEnd)
+    val effectivePausedMs = pausedMs.coerceAtMost((sessionEnd - sessionStart).coerceAtLeast(0L))
     val validRange = sessionEnd > sessionStart && sessionTotalMs > 0L
     val saveEnabled = validRange &&
         allocs.isNotEmpty() &&
         allocs.sumOf { it.durationMs } == sessionTotalMs
 
-    // Keep allocations consistent when the session span changes: rescale all
-    // shares proportionally to the new total so the strict-sum invariant holds
-    // without forcing the user through the allocation dialog.
+    // Moving the span rescales every share proportionally so the strict-sum
+    // invariant holds without forcing the user through the allocation dialog.
     fun applyTimes(newStart: Long, newEnd: Long) {
-        val newTotal = TimeFormat.snapDurationMs(newEnd - newStart)
+        val newTotal = totalFor(newStart, newEnd)
         if (newTotal > 0L && allocs.isNotEmpty()) {
-            allocs = rescaleAllocations(allocs, newTotal)
+            val scaled = Allocation.scaleMsToTotal(allocs.map { it.durationMs }, newTotal)
+            allocs = allocs.mapIndexed { i, a -> a.copy(durationMs = scaled[i]) }
         }
         sessionStart = newStart
         sessionEnd = newEnd
@@ -136,23 +133,16 @@ fun SessionEditDialog(
             TextButton(
                 onClick = {
                     scope.launch {
-                        sessionDao.updateSessionTimes(
-                            sessionId = sessionId,
-                            startMs = sessionStart,
-                            endMs = sessionStart + sessionTotalMs
+                        val ok = repository.updateSession(
+                            session = base.copy(
+                                startMs = sessionStart,
+                                endMs = sessionStart + effectivePausedMs + sessionTotalMs,
+                                pausedMs = effectivePausedMs,
+                                note = noteText
+                            ),
+                            allocMs = allocs.associate { it.trackId to it.durationMs }
                         )
-                        sessionDao.updateSessionNote(sessionId, noteText.trim())
-                        sessionDao.replaceAllocations(
-                            sessionId = sessionId,
-                            allocations = allocs.map {
-                                SessionTrackAllocationEntity(
-                                    sessionId = sessionId,
-                                    trackId = it.trackId,
-                                    durationMs = it.durationMs
-                                )
-                            }
-                        )
-                        onDismiss()
+                        if (ok) onDismiss() else saveFailed = true
                     }
                 },
                 enabled = saveEnabled
@@ -169,11 +159,7 @@ fun SessionEditDialog(
                     .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    text = "时间",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                FieldLabel("时间")
                 Spacer(Modifier.height(6.dp))
                 SessionTimeEditor(
                     startMs = sessionStart,
@@ -183,10 +169,12 @@ fun SessionEditDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (validRange) {
-                        "时长 · ${TimeFormat.shortDuration(sessionTotalMs)}"
-                    } else {
-                        "结束时间必须晚于开始时间"
+                    text = when {
+                        !validRange -> "结束时间必须晚于开始时间"
+                        effectivePausedMs >= 1000L ->
+                            "时长 · ${TimeFormat.durationPrecise(sessionTotalMs)}" +
+                                "（已扣除暂停 ${TimeFormat.duration(effectivePausedMs)}）"
+                        else -> "时长 · ${TimeFormat.durationPrecise(sessionTotalMs)}"
                     },
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFeatureSettings = TabularNumFeature
@@ -196,11 +184,7 @@ fun SessionEditDialog(
                 )
                 Spacer(Modifier.height(16.dp))
 
-                Text(
-                    text = "备注",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                FieldLabel("备注")
                 Spacer(Modifier.height(4.dp))
                 BasicTextField(
                     value = noteText,
@@ -230,11 +214,7 @@ fun SessionEditDialog(
 
                 Spacer(Modifier.height(16.dp))
 
-                Text(
-                    text = "时间分配",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                FieldLabel("时间分配")
                 Spacer(Modifier.height(8.dp))
 
                 allocs.forEach { a ->
@@ -251,7 +231,7 @@ fun SessionEditDialog(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = TimeFormat.shortDuration(a.durationMs),
+                            text = TimeFormat.durationPrecise(a.durationMs),
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontFeatureSettings = TabularNumFeature,
                                 fontWeight = FontWeight.SemiBold
@@ -261,12 +241,20 @@ fun SessionEditDialog(
                     }
                 }
 
-                if (!saveEnabled && allocs.isNotEmpty()) {
+                if (validRange && !saveEnabled && allocs.isNotEmpty()) {
                     val sum = allocs.sumOf { it.durationMs }
                     Text(
-                        text = "分配合计 ${TimeFormat.shortDuration(sum)} ≠ " +
-                            "记录总计 ${TimeFormat.shortDuration(sessionTotalMs)}。" +
+                        text = "分配合计 ${TimeFormat.durationPrecise(sum)} ≠ " +
+                            "记录总计 ${TimeFormat.durationPrecise(sessionTotalMs)}。" +
                             "请调整分配。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+                if (saveFailed) {
+                    Text(
+                        text = "保存失败，请重试。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 6.dp)
@@ -275,26 +263,8 @@ fun SessionEditDialog(
 
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "调整分配…",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { allocDialogVisible = true }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    )
-                    Text(
-                        text = "添加主题…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { pickerVisible = true }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                    )
+                    LinkAction(text = "调整分配…", bold = true) { allocDialogVisible = true }
+                    LinkAction(text = "添加主题…") { pickerVisible = true }
                 }
 
                 Spacer(Modifier.height(20.dp))
@@ -331,23 +301,19 @@ fun SessionEditDialog(
             initiallySelected = allocs.map { it.trackId }.toSet(),
             onDismiss = { pickerVisible = false },
             onConfirm = { refs ->
+                // Kept tracks keep their share; newly added ones split what's left.
                 val existing = allocs.associate { it.trackId to it.durationMs }
                 val targetIds = refs.map { it.id }.toSet()
                 val keptMs = existing.filterKeys { it in targetIds }.values.sum()
                 val remaining = (sessionTotalMs - keptMs).coerceAtLeast(0L)
                 val newOnes = refs.filter { it.id !in existing }
-                val perNew = if (newOnes.isNotEmpty()) remaining / newOnes.size else 0L
-                val remainderTrackId = newOnes.firstOrNull()?.id
+                val newShares = Allocation.scaleMsToTotal(List(newOnes.size) { 0L }, remaining)
+                    .let { shares -> newOnes.mapIndexed { i, r -> r.id to shares[i] }.toMap() }
                 val rebuilt = refs.map { ref ->
-                    val ms = existing[ref.id] ?: (
-                        perNew + if (ref.id == remainderTrackId) {
-                            remaining - perNew * newOnes.size
-                        } else 0L
-                        )
-                    SessionDao.SessionAllocationOf(
+                    SessionAllocationOf(
                         trackId = ref.id,
                         trackName = ref.name,
-                        durationMs = ms
+                        durationMs = existing[ref.id] ?: newShares[ref.id] ?: 0L
                     )
                 }
                 allocs = rebuilt
@@ -358,16 +324,7 @@ fun SessionEditDialog(
             },
             onCreate = { name, onCreated ->
                 scope.launch {
-                    val trimmed = name.trim()
-                    val existing = trackDao.findTrackIdByName(trimmed)
-                    val id = existing ?: run {
-                        trackDao.insertTrack(
-                            TrackEntity(name = trimmed, createdAtMs = System.currentTimeMillis())
-                        )
-                        trackDao.findTrackIdByName(trimmed)
-                    } ?: return@launch
-                    allTracks = trackDao.observeTracks().firstOrNull().orEmpty()
-                    onCreated(id, trimmed)
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -399,7 +356,7 @@ fun SessionEditDialog(
                 TextButton(onClick = {
                     askDelete = false
                     scope.launch {
-                        sessionDao.deleteSessionCascade(sessionId)
+                        repository.deleteSession(sessionId)
                         onDismiss()
                     }
                 }) {
@@ -415,29 +372,26 @@ fun SessionEditDialog(
     }
 }
 
-/**
- * Scale allocation shares proportionally so they sum exactly to [targetMs]
- * (at second precision). The last row absorbs rounding remainder.
- */
-private fun rescaleAllocations(
-    allocs: List<SessionDao.SessionAllocationOf>,
-    targetMs: Long
-): List<SessionDao.SessionAllocationOf> {
-    if (allocs.isEmpty()) return allocs
-    val targetSec = targetMs / 1000L
-    val currentSum = allocs.sumOf { it.durationMs / 1000L }
-    val out = ArrayList<SessionDao.SessionAllocationOf>(allocs.size)
-    var assigned = 0L
-    for ((i, a) in allocs.withIndex()) {
-        val sec = if (i == allocs.lastIndex) {
-            (targetSec - assigned).coerceAtLeast(0L)
-        } else if (currentSum == 0L) {
-            targetSec / allocs.size
-        } else {
-            ((a.durationMs / 1000L).toDouble() / currentSum * targetSec).toLong()
-        }
-        assigned += sec
-        out.add(a.copy(durationMs = sec * 1000L))
-    }
-    return out
+@Composable
+private fun FieldLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun LinkAction(text: String, bold: Boolean = false, onClick: () -> Unit) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium.copy(
+            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal
+        ),
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    )
 }

@@ -19,20 +19,32 @@ object TimeFormat {
         return String.format(numericLocale, "%02d:%02d:%02d", h, m, sec)
     }
 
-    fun hmsFromMs(ms: Long): String = hms(ms / 1000L)
+    /**
+     * Duration with units at minute precision, for lists and totals:
+     * "45秒", "13分钟", "1小时5分", "119小时".
+     */
+    fun duration(ms: Long): String {
+        val s = (ms / 1000L).coerceAtLeast(0L)
+        if (s < 60) return "${s}秒"
+        val m = s / 60
+        if (m < 60) return "${m}分钟"
+        val h = m / 60
+        val mm = m % 60
+        return if (mm == 0L) "${h}小时" else "${h}小时${mm}分"
+    }
 
-    /** Clock-style label that drops the hour when zero: "0:42", "12:34", "1:23:45". */
-    fun clockSeconds(seconds: Long): String {
-        val s = seconds.coerceAtLeast(0L)
+    /** Duration with units at second precision, for editors: "7秒", "13分55秒", "1小时05分12秒". */
+    fun durationPrecise(ms: Long): String {
+        val s = (ms / 1000L).coerceAtLeast(0L)
         val h = s / 3600
         val m = (s % 3600) / 60
         val ss = s % 60
-        return if (h > 0) String.format(numericLocale, "%d:%02d:%02d", h, m, ss)
-        else String.format(numericLocale, "%d:%02d", m, ss)
+        return when {
+            h > 0 -> String.format(numericLocale, "%d小时%02d分%02d秒", h, m, ss)
+            m > 0 -> String.format(numericLocale, "%d分%02d秒", m, ss)
+            else -> "${ss}秒"
+        }
     }
-
-    /** Compact numeric duration, e.g. "24:00", "1:05:00", "0:03". */
-    fun shortDuration(ms: Long): String = clockSeconds(ms / 1000L)
 
     fun hhmm(ms: Long): String =
         SimpleDateFormat("HH:mm", numericLocale).format(Date(ms))

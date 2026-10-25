@@ -36,8 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mokie.timelogdemo.data.SessionAllocationRow
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.TrackDao
+import com.mokie.timelogdemo.data.TimeLogRepository
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.ManualSessionDialog
 import com.mokie.timelogdemo.ui.components.PageTitle
@@ -55,11 +54,8 @@ private enum class SessionFilter(val label: String) {
 }
 
 @Composable
-fun SessionsScreen(
-    sessionDao: SessionDao,
-    trackDao: TrackDao
-) {
-    val rows by sessionDao.observeAllAllocations().collectAsState(initial = emptyList())
+fun SessionsScreen(repository: TimeLogRepository) {
+    val rows by repository.sessionRows.collectAsState(initial = emptyList())
     var filter by rememberSaveable { mutableStateOf(SessionFilter.All) }
     var editingSessionId by remember { mutableStateOf<Long?>(null) }
     var manualEntryVisible by remember { mutableStateOf(false) }
@@ -119,7 +115,7 @@ fun SessionsScreen(
                 item(key = "header-$dayMs") {
                     DayHeader(
                         dayMs = dayMs,
-                        totalMs = dayItems.sumOf { (it.endMs - it.startMs).coerceAtLeast(0L) }
+                        totalMs = dayItems.sumOf { it.durationMs }
                     )
                 }
                 items(items = dayItems, key = { it.sessionId }) { sess ->
@@ -147,8 +143,7 @@ fun SessionsScreen(
 
     if (manualEntryVisible) {
         ManualSessionDialog(
-            sessionDao = sessionDao,
-            trackDao = trackDao,
+            repository = repository,
             onDismiss = { manualEntryVisible = false }
         )
     }
@@ -156,8 +151,7 @@ fun SessionsScreen(
     editingSessionId?.let { sid ->
         SessionEditDialog(
             sessionId = sid,
-            sessionDao = sessionDao,
-            trackDao = trackDao,
+            repository = repository,
             onDismiss = { editingSessionId = null }
         )
     }
@@ -212,7 +206,7 @@ private fun DayHeader(dayMs: Long, totalMs: Long) {
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = TimeFormat.shortDuration(totalMs),
+            text = TimeFormat.duration(totalMs),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontFeatureSettings = TabularNumFeature
             ),
@@ -282,19 +276,25 @@ private fun SessionRow(session: SessionItem, onClick: () -> Unit) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = TimeFormat.shortDuration(
-                        (session.endMs - session.startMs).coerceAtLeast(0L)
-                    ),
+                    text = TimeFormat.duration(session.durationMs),
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontFeatureSettings = TabularNumFeature
                     ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            if (session.pausedMs >= 1000L) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "含暂停 ${TimeFormat.duration(session.pausedMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (session.splits.size > 1) {
                 Spacer(Modifier.height(2.dp))
                 val splitText = session.splits.joinToString(separator = " · ") {
-                    "${it.first} ${TimeFormat.shortDuration(it.second)}"
+                    "${it.first} ${TimeFormat.duration(it.second)}"
                 }
                 Text(
                     text = splitText,
@@ -325,6 +325,8 @@ internal data class SessionItem(
     val sessionId: Long,
     val startMs: Long,
     val endMs: Long,
+    val durationMs: Long,
+    val pausedMs: Long,
     val note: String,
     val headlineTrack: String,
     val headlineTrackId: Long,
@@ -343,6 +345,8 @@ internal fun collapseRows(rows: List<SessionAllocationRow>): List<SessionItem> {
                 sessionId = first.sessionId,
                 startMs = first.startMs,
                 endMs = first.endMs,
+                durationMs = first.sessionDurationMs,
+                pausedMs = first.pausedMs,
                 note = first.note,
                 headlineTrack = if (group.size == 1) {
                     biggest.trackName

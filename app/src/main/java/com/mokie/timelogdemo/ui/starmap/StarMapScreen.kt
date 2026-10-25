@@ -51,11 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.TrackDao
+import com.mokie.timelogdemo.data.TimeLogRepository
 import com.mokie.timelogdemo.data.TrackTree
-import com.mokie.timelogdemo.data.observeTrackTree
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.components.EmptyState
 import com.mokie.timelogdemo.ui.components.TabularNumFeature
 import com.mokie.timelogdemo.ui.theme.trackColor
@@ -79,14 +77,11 @@ private const val INTRO_SCALE = 0.45f
 @Composable
 fun StarMapScreen(
     session: TrackingSession,
-    trackDao: TrackDao,
-    sessionDao: SessionDao,
+    repository: TimeLogRepository,
     onOpenTrackDetail: (Long) -> Unit,
     onBack: () -> Unit
 ) {
-    val tree by remember(trackDao, sessionDao) {
-        observeTrackTree(trackDao, sessionDao)
-    }.collectAsState(initial = null)
+    val tree by repository.trackTree.collectAsState()
     val current = tree
 
     var selected by remember { mutableStateOf<Long?>(null) }
@@ -184,7 +179,7 @@ private fun NodeInfoDialog(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = if (totalMs > 0L) TimeFormat.shortDuration(totalMs) else "暂无记录",
+                    text = if (totalMs > 0L) TimeFormat.duration(totalMs) else "暂无记录",
                     style = MaterialTheme.typography.displaySmall.copy(
                         fontFeatureSettings = TabularNumFeature
                     ),

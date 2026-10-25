@@ -44,13 +44,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mokie.timelogdemo.data.SessionContribution
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.TrackDao
+import com.mokie.timelogdemo.data.TimeLogRepository
 import com.mokie.timelogdemo.data.TrackEntity
-import com.mokie.timelogdemo.data.TrackInheritanceEntity
 import com.mokie.timelogdemo.data.TrackTree
-import com.mokie.timelogdemo.data.observeTrackTree
-import com.mokie.timelogdemo.ui.TrackingSession
+import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.components.InsetGroup
 import com.mokie.timelogdemo.ui.components.ManualSessionDialog
 import com.mokie.timelogdemo.ui.components.RowDivider
@@ -66,28 +63,24 @@ import kotlinx.coroutines.launch
 fun TrackDetailScreen(
     trackId: Long,
     session: TrackingSession,
-    trackDao: TrackDao,
-    sessionDao: SessionDao,
+    repository: TimeLogRepository,
     onBack: () -> Unit,
     onOpenTrackDetail: (Long) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var track by remember(trackId) { mutableStateOf<TrackEntity?>(null) }
-
+    val tree by repository.trackTree.collectAsState()
+    var loadedTrack by remember(trackId) { mutableStateOf<TrackEntity?>(null) }
     LaunchedEffect(trackId) {
-        track = trackDao.findTrackById(trackId)
+        loadedTrack = repository.findTrack(trackId)
     }
+    // Prefer the live tree so a rename shows up immediately.
+    val track = tree?.byId?.get(trackId) ?: loadedTrack
 
-    val contributions by sessionDao
-        .observeContributionsForTrack(trackId)
+    val contributions by remember(trackId) { repository.contributionsFor(trackId) }
         .collectAsState(initial = emptyList())
 
-    val tree by remember(trackDao, sessionDao) {
-        observeTrackTree(trackDao, sessionDao)
-    }.collectAsState(initial = null)
-
     var renameVisible by remember { mutableStateOf(false) }
-    var deleteConfirmVisible by remember { mutableStateOf(false) }
+    var deleteImpact by remember { mutableStateOf<TimeLogRepository.DeleteImpact?>(null) }
     var editingSessionId by remember { mutableStateOf<Long?>(null) }
     var addParentVisible by remember { mutableStateOf(false) }
     var addChildVisible by remember { mutableStateOf(false) }
@@ -110,7 +103,9 @@ fun TrackDetailScreen(
             dotColor = trackColor(trackId),
             onBack = onBack,
             onRename = { renameVisible = true },
-            onDelete = { deleteConfirmVisible = true }
+            onDelete = {
+                scope.launch { deleteImpact = repository.deleteImpact(trackId) }
+            }
         )
 
         Spacer(Modifier.height(8.dp))
@@ -150,10 +145,10 @@ fun TrackDetailScreen(
             onAddParent = { addParentVisible = true },
             onAddChild = { addChildVisible = true },
             onRemoveParent = { parentId ->
-                scope.launch { trackDao.removeInheritance(trackId, parentId) }
+                scope.launch { repository.removeParent(childId = trackId, parentId = parentId) }
             },
             onRemoveChild = { childId ->
-                scope.launch { trackDao.removeInheritance(childId, trackId) }
+                scope.launch { repository.removeParent(childId = childId, parentId = trackId) }
             }
         )
 
@@ -195,37 +190,32 @@ fun TrackDetailScreen(
 
     if (renameVisible && track != null) {
         RenameDialog(
-            currentName = track!!.name,
+            currentName = track.name,
             onDismiss = { renameVisible = false },
-            onConfirm = { newName ->
-                scope.launch {
-                    trackDao.renameTrack(trackId, newName.trim())
-                    track = trackDao.findTrackById(trackId)
-                }
-                renameVisible = false
-            }
+            onSubmit = { newName -> repository.renameTrack(trackId, newName) },
+            onRenamed = { renameVisible = false }
         )
     }
 
-    if (deleteConfirmVisible) {
+    deleteImpact?.let { impact ->
         AlertDialog(
-            onDismissRequest = { deleteConfirmVisible = false },
+            onDismissRequest = { deleteImpact = null },
             confirmButton = {
                 TextButton(onClick = {
+                    deleteImpact = null
                     scope.launch {
-                        trackDao.deleteTrackCascade(trackId)
+                        repository.deleteTrack(trackId)
                         onBack()
                     }
-                }) { Text("删除") }
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteConfirmVisible = false }) { Text("取消") }
+                TextButton(onClick = { deleteImpact = null }) { Text("取消") }
             },
             title = { Text("删除此主题？") },
             text = {
                 Text(
-                    "子主题会保留，但与此主题的关联会被移除。" +
-                        "此主题上的时间分配会被删除，其他主题上的分配不受影响。",
+                    deleteImpactText(impact),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -246,16 +236,16 @@ fun TrackDetailScreen(
             onConfirm = { newParents ->
                 scope.launch {
                     newParents.forEach { p ->
-                        if (tree?.canAddParent(child = trackId, parent = p) == true) {
-                            trackDao.insertInheritance(
-                                TrackInheritanceEntity(
-                                    childTrackId = trackId,
-                                    parentTrackId = p
-                                )
-                            )
+                        if (tree?.canAddParent(child = trackId, parent = p) != false) {
+                            repository.addParent(childId = trackId, parentId = p)
                         }
                     }
                     addParentVisible = false
+                }
+            },
+            onCreate = { name, onCreated ->
+                scope.launch {
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -274,16 +264,16 @@ fun TrackDetailScreen(
             onConfirm = { newChildren ->
                 scope.launch {
                     newChildren.forEach { c ->
-                        if (tree?.canAddParent(child = c, parent = trackId) == true) {
-                            trackDao.insertInheritance(
-                                TrackInheritanceEntity(
-                                    childTrackId = c,
-                                    parentTrackId = trackId
-                                )
-                            )
+                        if (tree?.canAddParent(child = c, parent = trackId) != false) {
+                            repository.addParent(childId = c, parentId = trackId)
                         }
                     }
                     addChildVisible = false
+                }
+            },
+            onCreate = { name, onCreated ->
+                scope.launch {
+                    repository.ensureTrack(name)?.let { onCreated(it.id, it.name) }
                 }
             }
         )
@@ -292,19 +282,28 @@ fun TrackDetailScreen(
     editingSessionId?.let { sid ->
         SessionEditDialog(
             sessionId = sid,
-            sessionDao = sessionDao,
-            trackDao = trackDao,
+            repository = repository,
             onDismiss = { editingSessionId = null }
         )
     }
 
     if (manualEntryVisible) {
         ManualSessionDialog(
-            sessionDao = sessionDao,
-            trackDao = trackDao,
+            repository = repository,
             initialTrackId = trackId,
             onDismiss = { manualEntryVisible = false }
         )
+    }
+}
+
+private fun deleteImpactText(impact: TimeLogRepository.DeleteImpact): String = buildString {
+    append("子主题会保留，只移除与此主题的关联。")
+    if (impact.sessionsRemoved > 0) {
+        append("\n\n只属于此主题的 ${impact.sessionsRemoved} 条记录会被删除。")
+    }
+    if (impact.sessionsRebalanced > 0) {
+        append("\n\n与其他主题共享的 ${impact.sessionsRebalanced} 条记录会保留，")
+        append("这部分时间按比例并入其余主题。")
     }
 }
 
@@ -422,7 +421,7 @@ private fun HierarchyLinkRow(
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = if (totalMs > 0L) TimeFormat.shortDuration(totalMs) else "—",
+                text = if (totalMs > 0L) TimeFormat.duration(totalMs) else "—",
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontFeatureSettings = TabularNumFeature
                 ),
@@ -472,18 +471,19 @@ private fun ParentChildPickerDialog(
     tree: TrackTree?,
     filter: (TrackEntity) -> Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (Set<Long>) -> Unit
+    onConfirm: (Set<Long>) -> Unit,
+    onCreate: (String, (Long, String) -> Unit) -> Unit
 ) {
-    val available = tree?.tracks?.filter(filter).orEmpty()
+    // Snapshot the candidates when the dialog opens: a track created inline must
+    // not be filtered out once it lands in the tree.
+    val available = remember { tree?.tracks?.filter(filter).orEmpty() }
     TrackPickerDialog(
         title = title,
         available = available,
         initiallySelected = emptySet(),
         onDismiss = onDismiss,
         onConfirm = { refs -> onConfirm(refs.map { it.id }.toSet()) },
-        onCreate = { _, _ ->
-            // Reuse existing tracks only.
-        }
+        onCreate = onCreate
     )
 }
 
@@ -577,7 +577,7 @@ private fun Hero(
             .padding(horizontal = 24.dp)
     ) {
         Text(
-            text = if (totalMs > 0L) TimeFormat.shortDuration(totalMs) else "0:00",
+            text = TimeFormat.duration(totalMs),
             style = MaterialTheme.typography.displayLarge.copy(
                 fontFeatureSettings = TabularNumFeature
             ),
@@ -593,7 +593,7 @@ private fun Hero(
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "自身 ${TimeFormat.shortDuration(selfMs)} · $sessionPart",
+                text = "自身 ${TimeFormat.duration(selfMs)} · $sessionPart",
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontFeatureSettings = TabularNumFeature
                 ),
@@ -694,13 +694,13 @@ private fun DayHeader(dayLabel: String, dayTotalMs: Long) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = dayLabel.uppercase(),
+            text = dayLabel,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = TimeFormat.shortDuration(dayTotalMs),
+            text = TimeFormat.duration(dayTotalMs),
             style = MaterialTheme.typography.labelMedium.copy(
                 fontFeatureSettings = TabularNumFeature,
                 fontWeight = FontWeight.SemiBold
@@ -715,7 +715,7 @@ private fun ContributionRow(
     row: SessionContribution,
     onClickRow: () -> Unit
 ) {
-    val sessionTotalMs = (row.endMs - row.startMs).coerceAtLeast(0L)
+    val sessionTotalMs = row.sessionDurationMs
     val sharedSplit = row.totalAllocationsCount > 1
 
     Column(
@@ -734,7 +734,7 @@ private fun ContributionRow(
                 modifier = Modifier.weight(1f)
             )
             Text(
-                text = TimeFormat.shortDuration(row.contributedMs),
+                text = TimeFormat.duration(row.contributedMs),
                 style = MaterialTheme.typography.titleSmall.copy(
                     fontFeatureSettings = TabularNumFeature,
                     fontWeight = FontWeight.SemiBold
@@ -745,7 +745,7 @@ private fun ContributionRow(
         if (sharedSplit) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "共 ${TimeFormat.shortDuration(sessionTotalMs)} · 分配到 " +
+                text = "共 ${TimeFormat.duration(sessionTotalMs)} · 分配到 " +
                     "${row.totalAllocationsCount} 个主题",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -772,14 +772,26 @@ private fun ContributionRow(
 private fun RenameDialog(
     currentName: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onSubmit: suspend (String) -> TimeLogRepository.RenameResult,
+    onRenamed: () -> Unit
 ) {
+    val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(currentName) }
+    var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name) },
+                onClick = {
+                    scope.launch {
+                        when (onSubmit(name)) {
+                            TimeLogRepository.RenameResult.Ok -> onRenamed()
+                            TimeLogRepository.RenameResult.NameTaken ->
+                                error = "已有同名主题「${name.trim()}」"
+                            TimeLogRepository.RenameResult.Blank -> error = "名称不能为空"
+                        }
+                    }
+                },
                 enabled = name.trim().isNotEmpty()
             ) { Text("保存") }
         },
@@ -788,17 +800,30 @@ private fun RenameDialog(
         },
         title = { Text("重命名主题") },
         text = {
-            BasicTextField(
-                value = name,
-                onValueChange = { name = it },
-                singleLine = true,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                textStyle = LocalTextStyle.current.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = MaterialTheme.typography.bodyLarge.fontSize
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column {
+                BasicTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        error = null
+                    },
+                    singleLine = true,
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    textStyle = LocalTextStyle.current.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = MaterialTheme.typography.bodyLarge.fontSize
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                error?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
     )
 }

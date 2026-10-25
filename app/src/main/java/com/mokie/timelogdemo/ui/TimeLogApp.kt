@@ -16,15 +16,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.ListAlt
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,11 +37,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.mokie.timelogdemo.data.SessionDao
-import com.mokie.timelogdemo.data.TrackDao
+import com.mokie.timelogdemo.data.TimeLogRepository
+import com.mokie.timelogdemo.tracking.TimerController
+import com.mokie.timelogdemo.tracking.TrackingSession
+import com.mokie.timelogdemo.ui.mindmap.MindMapScreen
 import com.mokie.timelogdemo.ui.now.NowScreen
 import com.mokie.timelogdemo.ui.now.TrackDetailScreen
-import com.mokie.timelogdemo.ui.review.ReviewScreen
 import com.mokie.timelogdemo.ui.starmap.StarMapScreen
 import com.mokie.timelogdemo.ui.sessions.SessionsScreen
 
@@ -50,7 +55,7 @@ private enum class Tab(val title: String, val icon: ImageVector) {
 /**
  * Tiny, hand-rolled navigation stack stored as a list of opaque string tokens
  * so it survives `rememberSaveable` without a custom Saver. Tokens:
- *   - "mindmap"
+ *   - "starmap"
  *   - "detail:<trackId>"
  *
  * The current tab is the implicit "root" at the bottom of the stack. Switching
@@ -58,14 +63,35 @@ private enum class Tab(val title: String, val icon: ImageVector) {
  */
 @Composable
 fun TimeLogApp(
-    trackDao: TrackDao,
-    sessionDao: SessionDao
+    repository: TimeLogRepository,
+    session: TrackingSession,
+    stopRequested: Boolean,
+    onStopRequestHandled: () -> Unit,
+    onNotificationPermissionGranted: () -> Unit
 ) {
     val context = LocalContext.current
-    val session = remember { TrackingSession(context) }
 
     var current by rememberSaveable { mutableStateOf(Tab.Now) }
     var stack by rememberSaveable { mutableStateOf(emptyList<String>()) }
+
+    // The stop flow lives on the Now tab, so bring it to the front.
+    LaunchedEffect(stopRequested) {
+        if (stopRequested) {
+            stack = emptyList()
+            current = Tab.Now
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) onNotificationPermissionGranted() }
+    LaunchedEffect(session.isActive) {
+        if (session.isActive && !TimerController.hasNotificationPermission(context) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+        ) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     fun pushDetail(id: Long) {
         stack = stack + "detail:$id"
@@ -108,25 +134,21 @@ fun TimeLogApp(
                 top == null -> when (current) {
                     Tab.Now -> NowScreen(
                         session = session,
-                        trackDao = trackDao,
-                        sessionDao = sessionDao,
+                        repository = repository,
+                        stopRequested = stopRequested,
+                        onStopRequestHandled = onStopRequestHandled,
                         onOpenTrackDetail = { id -> pushDetail(id) },
                         onOpenStarMap = { pushStarMap() }
                     )
-                    Tab.Review -> ReviewScreen(
-                        sessionDao = sessionDao,
-                        trackDao = trackDao,
+                    Tab.Review -> MindMapScreen(
+                        repository = repository,
                         onOpenTrackDetail = { id -> pushDetail(id) }
                     )
-                    Tab.Sessions -> SessionsScreen(
-                        sessionDao = sessionDao,
-                        trackDao = trackDao
-                    )
+                    Tab.Sessions -> SessionsScreen(repository = repository)
                 }
                 top == "starmap" -> StarMapScreen(
                     session = session,
-                    trackDao = trackDao,
-                    sessionDao = sessionDao,
+                    repository = repository,
                     onOpenTrackDetail = { id -> pushDetail(id) },
                     onBack = { pop() }
                 )
@@ -135,8 +157,7 @@ fun TimeLogApp(
                     TrackDetailScreen(
                         trackId = id,
                         session = session,
-                        trackDao = trackDao,
-                        sessionDao = sessionDao,
+                        repository = repository,
                         onBack = { pop() },
                         onOpenTrackDetail = { newId -> pushDetail(newId) }
                     )
