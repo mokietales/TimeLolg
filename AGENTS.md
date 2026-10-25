@@ -16,7 +16,10 @@ backwards-compatibility constraint of any kind**:
 - Feature surfaces (tabs, screens, navigation flow) may be reshaped entirely
   whenever a better idea appears. Do not preserve "for compat" UI.
 - Do not warn the user about losing local data on each change. They already
-  know.
+  know. Exception: before starting a change that bumps the Room schema
+  version, say so up front (one line) so the user can batch such changes.
+- Plan for 1.0 (agreed 2026-10-24, not before): export Room schemas, write
+  migrations with migration tests, and add JSON data export/import.
 
 Rewriting from scratch is allowed and often preferred over patching when the
 mental model has shifted.
