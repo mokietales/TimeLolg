@@ -32,3 +32,7 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Xiaohongshu cover image and its generator (local only)
+docs/xiaohongshu-cover.png
+scripts/generate_xhs_cover.py
