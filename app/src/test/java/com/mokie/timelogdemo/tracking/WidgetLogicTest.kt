@@ -19,10 +19,14 @@ class WidgetLogicTest {
     private fun refs(vararg ids: Long) = ids.map { TrackRef(it, "t$it") }
 
     @Test
-    fun shownTracks_keepsRecentOrderAndCapsAtFour() {
+    fun shownTracks_keepsRecentOrderAndCapsAtSlotCount() {
         assertEquals(
             refs(1, 2, 3, 4),
-            WidgetUpdater.shownTracks(refs(1, 2, 3, 4, 5, 6), running = emptyList())
+            WidgetUpdater.shownTracks(refs(1, 2, 3, 4, 5, 6), running = emptyList(), slots = 4)
+        )
+        assertEquals(
+            refs(1, 2),
+            WidgetUpdater.shownTracks(refs(1, 2, 3, 4, 5, 6), running = emptyList(), slots = 2)
         )
     }
 
@@ -30,7 +34,7 @@ class WidgetLogicTest {
     fun shownTracks_runningTrackOutsideRecentTakesTheLastSlot() {
         assertEquals(
             refs(1, 2, 3, 9),
-            WidgetUpdater.shownTracks(refs(1, 2, 3, 4, 5), running = refs(9))
+            WidgetUpdater.shownTracks(refs(1, 2, 3, 4, 5), running = refs(9), slots = 4)
         )
     }
 
@@ -38,12 +42,18 @@ class WidgetLogicTest {
     fun shownTracks_neverEvictsAnotherRunningTrack() {
         assertEquals(
             refs(1, 2, 8, 4),
-            WidgetUpdater.shownTracks(refs(1, 2, 3, 4), running = refs(4, 8))
+            WidgetUpdater.shownTracks(refs(1, 2, 3, 4), running = refs(4, 8), slots = 4)
         )
     }
 
     @Test
     fun shownTracks_appendsWhenThereIsRoom() {
-        assertEquals(refs(1, 9), WidgetUpdater.shownTracks(refs(1), running = refs(9)))
+        assertEquals(refs(1, 9), WidgetUpdater.shownTracks(refs(1), running = refs(9), slots = 4))
+    }
+
+    @Test
+    fun rowHeights_growByOneButtonPerRow() {
+        assertEquals(128f, TimerWidgetProvider.heightForRows(1))
+        assertEquals(266f, TimerWidgetProvider.heightForRows(4))
     }
 }

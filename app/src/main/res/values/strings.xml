@@ -4,6 +4,6 @@
     <string name="widget_tracks_label">喵时 · 主题</string>
     <string name="widget_tracks_description">点主题直接开始计时，也能暂停和停止</string>
     <string name="widget_quick_label">喵时 · 快捷</string>
-    <string name="widget_quick_description">一键开始，计时中点一下暂停或继续</string>
+    <string name="widget_quick_description">一键开始、暂停、继续和结束计时</string>
     <string name="tile_label">喵时计时</string>
 </resources>

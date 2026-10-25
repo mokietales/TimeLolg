@@ -90,6 +90,14 @@ object TimerCommands {
             )
         }
 
+    /** Stop button target: commit in the background, or open the app when a choice is needed. */
+    fun stopIntent(context: Context, requestCode: Int, tracking: TrackingSession): PendingIntent =
+        if (needsInAppStop(tracking)) {
+            stopInAppIntent(context, requestCode)
+        } else {
+            broadcastIntent(context, requestCode, TimerActionReceiver.ACTION_STOP)
+        }
+
     /** Opens the app straight into the stop flow, optionally switching to [thenStart] afterwards. */
     fun stopInAppIntent(context: Context, requestCode: Int, thenStart: TrackRef? = null): PendingIntent =
         PendingIntent.getActivity(

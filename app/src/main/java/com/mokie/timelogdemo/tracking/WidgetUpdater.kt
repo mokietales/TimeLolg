@@ -31,7 +31,7 @@ class WidgetUpdater(
 
     fun refresh() {
         QuickWidgetProvider.updateAll(context, tracking)
-        TimerWidgetProvider.updateAll(context, tracking, shownTracks(recent, tracking.tracks))
+        TimerWidgetProvider.updateAll(context, tracking, recent)
     }
 
     companion object {
@@ -40,8 +40,7 @@ class WidgetUpdater(
          * expects them. A running theme that isn't among them takes the last slot,
          * so it's always visible (and highlighted).
          */
-        fun shownTracks(recent: List<TrackRef>, running: List<TrackRef>): List<TrackRef> {
-            val slots = TimerWidgetProvider.SLOTS
+        fun shownTracks(recent: List<TrackRef>, running: List<TrackRef>, slots: Int): List<TrackRef> {
             val runningIds = running.map { it.id }.toSet()
             val shown = recent.take(slots).toMutableList()
             for (r in running) {

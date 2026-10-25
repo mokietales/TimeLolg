@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2x1: the clock on top, pause/resume (or start) and stop side by side below. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/quick_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_quick_idle"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <Chronometer
+        android:id="@+id/quick_chrono"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFeatureSettings="tnum"
+        android:maxLines="1"
+        android:textColor="@color/widget_on_bg"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/quick_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:text="开始"
+        android:textColor="@color/widget_on_bg_variant"
+        android:textSize="13sp" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:id="@+id/quick_toggle"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:background="@drawable/widget_round_primary"
+            android:contentDescription="开始、暂停或继续"
+            android:padding="11dp"
+            android:src="@drawable/ic_widget_play" />
+
+        <ImageView
+            android:id="@+id/quick_stop"
+            android:layout_width="42dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/widget_round_secondary"
+            android:contentDescription="结束"
+            android:padding="12dp"
+            android:src="@drawable/ic_widget_stop"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>
