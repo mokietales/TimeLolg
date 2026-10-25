@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -655,7 +655,7 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Outlined.ArrowBack,
+            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
             contentDescription = "返回",
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier

@@ -16,7 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.ListAlt
+import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -54,7 +54,7 @@ private enum class Tab(val title: String, val icon: ImageVector) {
     Now("现在", Icons.Outlined.AccessTime),
     Stats("复盘", Icons.Outlined.Insights),
     Review("导图", Icons.Outlined.AccountTree),
-    Sessions("记录", Icons.Outlined.ListAlt)
+    Sessions("记录", Icons.AutoMirrored.Outlined.ListAlt)
 }
 
 /**

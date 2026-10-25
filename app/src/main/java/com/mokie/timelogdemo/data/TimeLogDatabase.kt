@@ -30,7 +30,7 @@ abstract class TimeLogDatabase : RoomDatabase() {
                     TimeLogDatabase::class.java,
                     "time_log.db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
             }

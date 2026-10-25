@@ -31,7 +31,7 @@ flip this section and start treating data + APIs as durable.
 After any code change that affects compiled output, the default expected
 hand-off is:
 
-1. `./gradlew :app:assembleDebug`
+1. `./gradlew :app:testDebugUnitTest :app:assembleDebug` (unit tests must pass)
 2. `adb install -r app/build/outputs/apk/debug/app-debug.apk`
 3. `adb shell am start -n com.mokie.timelogdemo/.MainActivity`
 4. Verify the process is alive and no fresh crash logs.

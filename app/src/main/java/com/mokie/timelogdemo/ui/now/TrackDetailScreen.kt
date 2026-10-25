@@ -19,7 +19,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Schedule
@@ -523,7 +523,7 @@ private fun DetailTopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Outlined.ArrowBack,
+            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
             contentDescription = "返回",
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier

@@ -69,7 +69,7 @@ fun AllocationDialog(
             initial.keys == tracks.map { it.id }.toSet() &&
             initial.values.all { it >= 0L }
         if (keysMatch) {
-            val raw = tracks.map { (initial!![it.id] ?: 0L) / 1000L }
+            val raw = tracks.map { (initial[it.id] ?: 0L) / 1000L }
             val s = raw.sum()
             if (s == totalSec) raw else Allocation.proportionalScale(raw, totalSec)
         } else {
