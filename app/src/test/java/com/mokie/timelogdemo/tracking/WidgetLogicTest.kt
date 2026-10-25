@@ -52,8 +52,30 @@ class WidgetLogicTest {
     }
 
     @Test
+    fun frozenClock_matchesChronometerShape() {
+        assertEquals("00:09", QuickWidgetProvider.frozenClock(9_300))
+        assertEquals("02:42", QuickWidgetProvider.frozenClock(162_000))
+        assertEquals("1:05:03", QuickWidgetProvider.frozenClock(3_903_000))
+    }
+
+    @Test
     fun rowHeights_growByOneButtonPerRow() {
         assertEquals(128f, TimerWidgetProvider.heightForRows(1))
         assertEquals(266f, TimerWidgetProvider.heightForRows(4))
+    }
+
+    @Test
+    fun columns_stackWhenEveryThemeFitsOnItsOwnRow() {
+        assertEquals(1, TimerWidgetProvider.columnsFor(2, rowCount = 3, themeCount = 2))
+        assertEquals(2, TimerWidgetProvider.columnsFor(2, rowCount = 3, themeCount = 4))
+        assertEquals(1, TimerWidgetProvider.columnsFor(1, rowCount = 3, themeCount = 2))
+        assertEquals(2, TimerWidgetProvider.columnsFor(2, rowCount = 1, themeCount = 2))
+    }
+
+    @Test
+    fun rowContent_fillsSpareHeightUpToACap() {
+        assertEquals(40f, TimerWidgetProvider.rowContentHeightDp(3, usedRows = 3, hasHint = false))
+        assertEquals(50f, TimerWidgetProvider.rowContentHeightDp(3, usedRows = 2, hasHint = true))
+        assertEquals(52f, TimerWidgetProvider.rowContentHeightDp(4, usedRows = 1, hasHint = false))
     }
 }

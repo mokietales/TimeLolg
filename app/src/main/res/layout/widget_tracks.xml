@@ -130,7 +130,15 @@
         android:textSize="12sp"
         android:visibility="gone" />
 
-    <!-- Fixed-height rows, top aligned; how many are shown depends on the widget's height. -->
+    <!-- Share leftover height so a short list sits in the middle of a tall card. -->
+    <TextView
+        android:id="@+id/grid_pad_top"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone" />
+
+    <!-- Fixed-height rows; how many are shown depends on the widget's height. -->
     <LinearLayout
         android:id="@+id/grid"
         android:layout_width="match_parent"
@@ -181,4 +189,11 @@
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/grid_pad_bottom"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:visibility="gone" />
 </LinearLayout>

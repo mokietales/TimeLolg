@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.os.SystemClock
 import android.util.SizeF
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -58,6 +59,26 @@ class TimerWidgetProvider : AppWidgetProvider() {
         /** Minimum widget height (dp) that fits [rows] theme rows: padding + header + 46dp per row. */
         internal fun heightForRows(rows: Int): Float = 24f + 58f + 46f * rows
 
+        /**
+         * One theme per row when they all fit. Two columns only when a single column
+         * would hide a theme — a half-empty second column is what made a short wide
+         * widget look like two chips floating over a blank card.
+         */
+        internal fun columnsFor(capacityColumns: Int, rowCount: Int, themeCount: Int): Int =
+            if (capacityColumns > 1 && themeCount in 1..rowCount) 1 else capacityColumns
+
+        /**
+         * Button height inside a row. The 6dp row margin is part of the 46dp budget,
+         * and buttons stop growing at 52dp so a tall widget with one theme stays a
+         * button, not a slab. Leftover space is split by the pads around the grid.
+         */
+        internal fun rowContentHeightDp(variantRows: Int, usedRows: Int, hasHint: Boolean): Float {
+            if (usedRows <= 0) return 40f
+            val hintDp = if (hasHint) 26f else 0f
+            val share = (46f * variantRows - hintDp) / usedRows
+            return (share - 6f).coerceIn(40f, 52f)
+        }
+
         fun updateAll(context: Context, tracking: TrackingSession, recent: List<TrackRef>) {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, TimerWidgetProvider::class.java))
@@ -97,8 +118,14 @@ class TimerWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.hint, if (blank) View.VISIBLE else View.GONE)
             // The hint line takes about a row's height; drop a row rather than clip one.
             val rowCount = if (blank) (rows - 1).coerceAtLeast(1) else rows
-            val shown = WidgetUpdater.shownTracks(recent, tracking.tracks, rowCount * columns)
-            bindSlots(context, views, tracking, shown, rowCount, columns)
+            val capacity = WidgetUpdater.shownTracks(recent, tracking.tracks, rowCount * columns)
+            val columnsUsed = columnsFor(columns, rowCount, capacity.size)
+            val shown = if (columnsUsed == columns) {
+                capacity
+            } else {
+                WidgetUpdater.shownTracks(recent, tracking.tracks, rowCount * columnsUsed)
+            }
+            bindSlots(context, views, tracking, shown, rowCount, columnsUsed, rows, blank)
             return views
         }
 
@@ -175,18 +202,29 @@ class TimerWidgetProvider : AppWidgetProvider() {
             tracking: TrackingSession,
             shown: List<TrackRef>,
             rowCount: Int,
-            columns: Int
+            columns: Int,
+            variantRows: Int,
+            hasHint: Boolean
         ) {
             if (shown.isEmpty()) {
                 views.setViewVisibility(R.id.grid, View.GONE)
+                views.setViewVisibility(R.id.grid_pad_top, View.GONE)
+                views.setViewVisibility(R.id.grid_pad_bottom, View.GONE)
                 views.setViewVisibility(R.id.empty, View.VISIBLE)
                 return
             }
             views.setViewVisibility(R.id.grid, View.VISIBLE)
+            views.setViewVisibility(R.id.grid_pad_top, View.VISIBLE)
+            views.setViewVisibility(R.id.grid_pad_bottom, View.VISIBLE)
             views.setViewVisibility(R.id.empty, View.GONE)
             val usedRows = minOf(rowCount, (shown.size + columns - 1) / columns)
+            val rowHeight = rowContentHeightDp(variantRows, usedRows, hasHint)
             rowIds.forEachIndexed { r, id ->
-                views.setViewVisibility(id, if (r < usedRows) View.VISIBLE else View.GONE)
+                val visible = r < usedRows
+                views.setViewVisibility(id, if (visible) View.VISIBLE else View.GONE)
+                if (visible && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    views.setViewLayoutHeight(id, rowHeight, TypedValue.COMPLEX_UNIT_DIP)
+                }
             }
 
             val runningIds = if (tracking.isActive) tracking.tracks.map { it.id }.toSet() else emptySet()

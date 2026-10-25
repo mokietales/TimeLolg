@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Fits one cell (~70x110dp): pause/resume, the clock, and stop, packed tight. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/quick_root"
     android:layout_width="match_parent"
@@ -6,13 +7,16 @@
     android:background="@drawable/widget_quick_idle"
     android:gravity="center"
     android:orientation="vertical"
-    android:padding="4dp">
+    android:paddingHorizontal="4dp"
+    android:paddingVertical="2dp">
 
     <ImageView
-        android:id="@+id/quick_icon"
-        android:layout_width="26dp"
-        android:layout_height="26dp"
-        android:contentDescription="@null"
+        android:id="@+id/quick_toggle"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@drawable/widget_round_primary"
+        android:contentDescription="开始、暂停或继续"
+        android:padding="10dp"
         android:src="@drawable/ic_widget_play" />
 
     <Chronometer
@@ -22,16 +26,39 @@
         android:layout_marginTop="2dp"
         android:fontFeatureSettings="tnum"
         android:maxLines="1"
-        android:textSize="11sp"
+        android:textColor="@color/widget_on_bg"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+    <!-- Paused time is text: a stopped Chronometer jumps forward if this layout is applied late. -->
+    <TextView
+        android:id="@+id/quick_frozen"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:fontFeatureSettings="tnum"
+        android:maxLines="1"
+        android:textColor="@color/widget_on_bg_variant"
+        android:textSize="12sp"
         android:visibility="gone" />
 
     <TextView
         android:id="@+id/quick_label"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
         android:maxLines="1"
         android:text="开始"
-        android:textColor="@color/widget_on_bg"
+        android:textColor="@color/widget_on_bg_variant"
         android:textSize="11sp" />
+
+    <ImageView
+        android:id="@+id/quick_stop"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/widget_round_secondary"
+        android:contentDescription="结束"
+        android:padding="9dp"
+        android:src="@drawable/ic_widget_stop"
+        android:visibility="gone" />
 </LinearLayout>

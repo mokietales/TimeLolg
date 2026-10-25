@@ -73,10 +73,13 @@ class WidgetRenderTest {
         val three = tracksWidget(five, rows = 3)
         assertEquals(View.VISIBLE, three.visibility(R.id.row2))
         assertEquals("code", three.text(R.id.slot4_name))
-        // Only two themes: one row, however tall the widget is.
+        // Two themes in a tall widget stack full-width instead of one short row.
         val two = tracksWidget(listOf(work, play), rows = 4)
-        assertEquals(View.VISIBLE, two.visibility(R.id.row0))
-        assertEquals(View.GONE, two.visibility(R.id.row1))
+        assertEquals("work", two.text(R.id.slot0_name))
+        assertEquals("play", two.text(R.id.slot2_name))
+        assertEquals(View.GONE, two.visibility(R.id.slot1))
+        assertEquals(View.VISIBLE, two.visibility(R.id.row1))
+        assertEquals(View.GONE, two.visibility(R.id.row2))
     }
 
     @Test
@@ -142,15 +145,26 @@ class WidgetRenderTest {
     // ----- Quick widget -----
 
     @Test
-    fun quickCompact_cyclesStartPauseResume() {
+    fun quickCompact_hasStopWhileTiming() {
         var v = quickWidget(Shape.Compact)
-        assertEquals(View.VISIBLE, v.visibility(R.id.quick_label))
+        assertEquals("开始", v.text(R.id.quick_label))
         assertEquals(View.GONE, v.visibility(R.id.quick_chrono))
+        assertEquals(View.GONE, v.visibility(R.id.quick_frozen))
+        assertEquals(View.GONE, v.visibility(R.id.quick_stop))
 
         tracking.startBlank()
         v = quickWidget(Shape.Compact)
         assertEquals(View.GONE, v.visibility(R.id.quick_label))
         assertEquals(View.VISIBLE, v.visibility(R.id.quick_chrono))
+        assertEquals(View.GONE, v.visibility(R.id.quick_frozen))
+        assertEquals(View.VISIBLE, v.visibility(R.id.quick_stop))
+
+        tracking.togglePause()
+        v = quickWidget(Shape.Compact)
+        assertEquals(View.GONE, v.visibility(R.id.quick_label))
+        assertEquals(View.GONE, v.visibility(R.id.quick_chrono))
+        assertEquals(View.VISIBLE, v.visibility(R.id.quick_frozen))
+        assertEquals(View.VISIBLE, v.visibility(R.id.quick_stop))
     }
 
     @Test
@@ -165,12 +179,15 @@ class WidgetRenderTest {
             v = quickWidget(shape)
             assertEquals(shape.name, View.VISIBLE, v.visibility(R.id.quick_stop))
             assertEquals(shape.name, View.VISIBLE, v.visibility(R.id.quick_chrono))
+            assertEquals(shape.name, View.GONE, v.visibility(R.id.quick_frozen))
             assertEquals(shape.name, View.GONE, v.visibility(R.id.quick_label))
 
             tracking.togglePause()
             v = quickWidget(shape)
             if (shape == Shape.Tall) assertEquals("已暂停", v.text(R.id.quick_label))
-            assertEquals(shape.name, View.VISIBLE, v.visibility(R.id.quick_chrono))
+            else assertEquals(shape.name, View.GONE, v.visibility(R.id.quick_label))
+            assertEquals(shape.name, View.GONE, v.visibility(R.id.quick_chrono))
+            assertEquals(shape.name, View.VISIBLE, v.visibility(R.id.quick_frozen))
             assertEquals(shape.name, View.VISIBLE, v.visibility(R.id.quick_stop))
         }
     }

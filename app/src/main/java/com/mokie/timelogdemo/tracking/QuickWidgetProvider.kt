@@ -9,14 +9,15 @@ import android.os.SystemClock
 import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
+import java.util.Locale
 import androidx.core.content.ContextCompat
 import com.mokie.timelogdemo.R
 import com.mokie.timelogdemo.timeLogApp
 
 /**
  * Quick timer widget. Default 1x2: start / pause / resume, the clock, and stop.
- * Resized to 2x1 it lays the buttons side by side; shrunk to 1x1 it becomes a
- * single start / pause / resume button.
+ * Resized to 2x1 it lays the buttons side by side. A cell that is still only one
+ * row tall keeps the same three controls, packed tighter — stop is always there.
  */
 class QuickWidgetProvider : AppWidgetProvider() {
 
@@ -33,6 +34,16 @@ class QuickWidgetProvider : AppWidgetProvider() {
     companion object {
         private const val REQ_TOGGLE = 60
         private const val REQ_STOP = 61
+
+        /** Same shape as a Chronometer: 00:09, 02:42, 1:05:03. */
+        internal fun frozenClock(ms: Long): String {
+            val total = (ms / 1000).coerceAtLeast(0)
+            val h = total / 3600
+            val m = (total % 3600) / 60
+            val s = total % 60
+            return if (h > 0) "%d:%02d:%02d".format(Locale.ROOT, h, m, s)
+            else "%02d:%02d".format(Locale.ROOT, m, s)
+        }
 
         fun updateAll(context: Context, tracking: TrackingSession) {
             val manager = AppWidgetManager.getInstance(context)
@@ -56,7 +67,6 @@ class QuickWidgetProvider : AppWidgetProvider() {
 
         internal fun buildViews(context: Context, tracking: TrackingSession, shape: Shape): RemoteViews {
             val views = RemoteViews(context.packageName, shape.layout)
-            val accent = ContextCompat.getColor(context, R.color.widget_accent)
             val onAccent = ContextCompat.getColor(context, R.color.widget_on_accent)
             val onBg = ContextCompat.getColor(context, R.color.widget_on_bg)
             val onBgVariant = ContextCompat.getColor(context, R.color.widget_on_bg_variant)
@@ -65,34 +75,23 @@ class QuickWidgetProvider : AppWidgetProvider() {
             val toggleIntent =
                 TimerCommands.broadcastIntent(context, REQ_TOGGLE, TimerActionReceiver.ACTION_QUICK_TOGGLE)
 
-            if (active) {
+            if (running) {
                 val elapsed = tracking.elapsedMs(System.currentTimeMillis())
-                views.setChronometer(R.id.quick_chrono, SystemClock.elapsedRealtime() - elapsed, null, running)
+                views.setChronometer(R.id.quick_chrono, SystemClock.elapsedRealtime() - elapsed, null, true)
                 views.setViewVisibility(R.id.quick_chrono, View.VISIBLE)
-            } else {
-                views.setChronometer(R.id.quick_chrono, SystemClock.elapsedRealtime(), null, false)
+                views.setViewVisibility(R.id.quick_frozen, View.GONE)
+            } else if (active) {
+                // A stopped Chronometer draws (now - base) when the host inflates it.
+                // A size picked later — the 1x1 becoming 1x2 — would count the pause.
                 views.setViewVisibility(R.id.quick_chrono, View.GONE)
+                views.setTextViewText(R.id.quick_frozen, frozenClock(tracking.elapsedMs(System.currentTimeMillis())))
+                views.setTextColor(R.id.quick_frozen, onBgVariant)
+                views.setViewVisibility(R.id.quick_frozen, View.VISIBLE)
+            } else {
+                views.setViewVisibility(R.id.quick_chrono, View.GONE)
+                views.setViewVisibility(R.id.quick_frozen, View.GONE)
             }
 
-            if (shape == Shape.Compact) {
-                // One big button: the whole tile is the toggle.
-                views.setInt(
-                    R.id.quick_root,
-                    "setBackgroundResource",
-                    if (running) R.drawable.widget_quick_running else R.drawable.widget_quick_idle
-                )
-                views.setImageViewResource(
-                    R.id.quick_icon,
-                    if (running) R.drawable.ic_widget_pause else R.drawable.ic_widget_play
-                )
-                views.setInt(R.id.quick_icon, "setColorFilter", if (running) onAccent else accent)
-                views.setTextColor(R.id.quick_chrono, if (running) onAccent else onBgVariant)
-                views.setViewVisibility(R.id.quick_label, if (active) View.GONE else View.VISIBLE)
-                views.setOnClickPendingIntent(R.id.quick_root, toggleIntent)
-                return views
-            }
-
-            // Tall / Wide: separate toggle and stop buttons.
             views.setImageViewResource(
                 R.id.quick_toggle,
                 if (running) R.drawable.ic_widget_pause else R.drawable.ic_widget_play
@@ -111,10 +110,9 @@ class QuickWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(R.id.quick_label, "开始")
                     views.setViewVisibility(R.id.quick_label, View.VISIBLE)
                 }
-                // Wide has no room for a third line; the dimmed clock and the play
-                // icon already say "paused".
-                tracking.isPaused && shape == Shape.Wide -> views.setViewVisibility(R.id.quick_label, View.GONE)
-                tracking.isPaused -> {
+                // Only the tall 1x2 has a spare line for "已暂停". Compact and wide
+                // already show a dimmed clock and a play icon.
+                tracking.isPaused && shape == Shape.Tall -> {
                     views.setTextViewText(R.id.quick_label, "已暂停")
                     views.setViewVisibility(R.id.quick_label, View.VISIBLE)
                 }
