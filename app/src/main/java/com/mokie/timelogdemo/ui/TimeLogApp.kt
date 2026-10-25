@@ -70,7 +70,7 @@ private enum class Tab(val title: String, val icon: ImageVector) {
 fun TimeLogApp(
     repository: TimeLogRepository,
     session: TrackingSession,
-    stopRequested: Boolean,
+    externalStopRequest: StopRequest?,
     onStopRequestHandled: () -> Unit,
     onNotificationPermissionGranted: () -> Unit
 ) {
@@ -79,7 +79,7 @@ fun TimeLogApp(
     var current by rememberSaveable { mutableStateOf(Tab.Now) }
     var stack by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var switchRequest by remember { mutableStateOf<StopRequest?>(null) }
-    val stopRequest = if (stopRequested) StopRequest(thenStart = null) else switchRequest
+    val stopRequest = externalStopRequest ?: switchRequest
 
     // The stop flow lives on the Now tab, so bring it to the front.
     LaunchedEffect(stopRequest) {

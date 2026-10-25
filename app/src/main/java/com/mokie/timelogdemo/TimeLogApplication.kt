@@ -7,6 +7,7 @@ import com.mokie.timelogdemo.data.TimeLogRepository
 import com.mokie.timelogdemo.tracking.TimerController
 import com.mokie.timelogdemo.tracking.TimerNotifications
 import com.mokie.timelogdemo.tracking.TrackingSession
+import com.mokie.timelogdemo.tracking.WidgetUpdater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +23,8 @@ class TimeLogApplication : Application() {
         private set
     lateinit var timerController: TimerController
         private set
+    lateinit var widgetUpdater: WidgetUpdater
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -29,6 +32,7 @@ class TimeLogApplication : Application() {
         repository = TimeLogRepository(TimeLogDatabase.getInstance(this), tracking, appScope)
         TimerNotifications.createChannel(this)
         timerController = TimerController(this, tracking).also { it.start(appScope) }
+        widgetUpdater = WidgetUpdater(this, tracking, repository).also { it.start(appScope) }
     }
 }
 

@@ -6,13 +6,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
+import com.mokie.timelogdemo.tracking.TimerCommands.trackExtra
 import com.mokie.timelogdemo.ui.TimeLogApp
+import com.mokie.timelogdemo.ui.now.StopRequest
 import com.mokie.timelogdemo.ui.theme.TimeLogTheme
 
 class MainActivity : ComponentActivity() {
 
-    /** Set when the notification's Stop needs the in-app flow (theme pick or time split). */
-    private val stopRequested = mutableStateOf(false)
+    /**
+     * Set when Stop (or a theme tap that switches) from the notification, a widget or
+     * the tile needs the in-app flow: picking a theme or splitting time.
+     */
+    private val externalStopRequest = mutableStateOf<StopRequest?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -25,8 +30,8 @@ class MainActivity : ComponentActivity() {
                 TimeLogApp(
                     repository = app.repository,
                     session = app.tracking,
-                    stopRequested = stopRequested.value,
-                    onStopRequestHandled = { stopRequested.value = false },
+                    externalStopRequest = externalStopRequest.value,
+                    onStopRequestHandled = { externalStopRequest.value = null },
                     onNotificationPermissionGranted = { app.timerController.sync() }
                 )
             }
@@ -46,7 +51,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent?.action == ACTION_STOP_REQUEST) stopRequested.value = true
+        if (intent?.action == ACTION_STOP_REQUEST) {
+            externalStopRequest.value = StopRequest(thenStart = intent.trackExtra())
+        }
     }
 
     companion object {

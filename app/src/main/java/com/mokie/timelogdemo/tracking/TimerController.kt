@@ -13,9 +13,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /**
- * Mirrors TrackingSession into every surface outside the app: the ongoing
- * notification (starting [TimerService] when a session begins and tearing it down
- * when it ends), the home-screen widget, and the Quick Settings tile.
+ * Mirrors TrackingSession into the ongoing notification (starting [TimerService]
+ * when a session begins and tearing it down when it ends) and the Quick Settings
+ * tile. Home-screen widgets are handled by WidgetUpdater.
  */
 class TimerController(
     private val context: Context,
@@ -27,7 +27,6 @@ class TimerController(
 
     /** Re-post now, e.g. right after the notification permission is granted. */
     fun sync() {
-        TimerWidgetProvider.updateAll(context, tracking)
         TimerTileService.requestRefresh(context)
         val manager = NotificationManagerCompat.from(context)
         if (!tracking.isActive) {

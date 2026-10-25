@@ -6,4 +6,5 @@
     <color name="widget_accent">#FF1C8C5A</color>
     <color name="widget_on_accent">#FFFFFFFF</color>
     <color name="widget_button">#FFEBE8E1</color>
+    <color name="widget_accent_container">#FFD7F0E2</color>
 </resources>
