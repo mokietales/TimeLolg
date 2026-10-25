@@ -32,6 +32,14 @@ data class SessionContribution(
     val totalAllocationsCount: Int
 )
 
+/** A session whose span intersects a candidate span. */
+data class OverlapRow(
+    val sessionId: Long,
+    val startMs: Long,
+    val endMs: Long,
+    val trackNames: String
+)
+
 /** One allocation with its track name, for editing a single session. */
 data class SessionAllocationOf(
     val trackId: Long,
@@ -92,6 +100,22 @@ interface SessionDao {
         """
     )
     suspend fun getAllocationsOfSessionsTouching(trackId: Long): List<SessionTrackAllocationEntity>
+
+    @Query(
+        """
+        SELECT s.id      AS sessionId,
+               s.startMs AS startMs,
+               s.endMs   AS endMs,
+               GROUP_CONCAT(t.name, '、') AS trackNames
+        FROM sessions s
+        JOIN session_track_allocation a ON a.sessionId = s.id
+        JOIN tracks t ON t.id = a.trackId
+        WHERE s.startMs < :endMs AND s.endMs > :startMs AND s.id != :excludeSessionId
+        GROUP BY s.id
+        ORDER BY s.startMs
+        """
+    )
+    suspend fun findOverlapping(startMs: Long, endMs: Long, excludeSessionId: Long): List<OverlapRow>
 
     @Query("SELECT trackId, durationMs FROM session_track_allocation")
     fun observeAllocationsLight(): Flow<List<TrackTree.SessionTrackAllocationOnly>>

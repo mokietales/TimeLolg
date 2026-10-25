@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -63,7 +64,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Scale the graph opens at, before animating to the fitted size. */
 private const val INTRO_SCALE = 0.45f
@@ -79,6 +82,7 @@ fun StarMapScreen(
     session: TrackingSession,
     repository: TimeLogRepository,
     onOpenTrackDetail: (Long) -> Unit,
+    onStartTrack: (TrackingSession.TrackRef) -> Unit,
     onBack: () -> Unit
 ) {
     val tree by repository.trackTree.collectAsState()
@@ -120,9 +124,8 @@ fun StarMapScreen(
             },
             onStart = {
                 val name = current.byId[sel]?.name ?: return@NodeInfoDialog
-                session.start(TrackingSession.TrackRef(sel, name))
                 selected = null
-                onBack()
+                onStartTrack(TrackingSession.TrackRef(sel, name))
             }
         )
     }
@@ -142,7 +145,8 @@ private fun NodeInfoDialog(
     val descCount = tree.descendantCount[trackId] ?: 0
     val parents = tree.parentsOf[trackId].orEmpty().mapNotNull { tree.byId[it]?.name }
     val children = tree.childrenOf[trackId].orEmpty().mapNotNull { tree.byId[it]?.name }
-    val running = session.isActive
+    val switching = session.isActive
+    val running = switching && session.tracks.singleOrNull()?.id == trackId
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -231,7 +235,7 @@ private fun NodeInfoDialog(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "开始计时",
+                            text = if (switching) "切换到此主题" else "开始计时",
                             style = MaterialTheme.typography.titleSmall.copy(
                                 fontWeight = FontWeight.SemiBold
                             ),
@@ -243,10 +247,10 @@ private fun NodeInfoDialog(
                     }
                 }
 
-                if (running) {
+                if (switching) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "已有进行中的记录",
+                        text = if (running) "正在计时" else "当前记录会先按停止流程保存",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -391,11 +395,6 @@ private fun GraphCanvas(
     onTapNode: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val density = LocalDensity.current.density
-    val edgeColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-    val labelColor = MaterialTheme.colorScheme.onSurface
-    val bg = MaterialTheme.colorScheme.background
-
     // Structural signature: rebuild + re-run the sim only when nodes/edges change.
     val signature = remember(tree) {
         tree.tracks.joinToString(",") { it.id.toString() } + "|" +
@@ -403,33 +402,63 @@ private fun GraphCanvas(
                 "$k>${v.joinToString("/")}"
             }
     }
+    // Settling is O(n²) per step for a couple of hundred steps; keep it off the main thread.
+    val sim by produceState<GraphSim?>(initialValue = null, signature) {
+        value = null
+        value = withContext(Dispatchers.Default) { settledSim(tree) }
+    }
+    val ready = sim
+    if (ready == null) {
+        Box(modifier = modifier.background(MaterialTheme.colorScheme.background))
+        return
+    }
+    GraphCanvasContent(
+        tree = tree,
+        sim = ready,
+        signature = signature,
+        onTapNode = onTapNode,
+        modifier = modifier
+    )
+}
 
-    val sim = remember(signature) {
-        val ids = tree.tracks.map { it.id }
-        val n = ids.size
-        val index = ids.withIndex().associate { (i, id) -> id to i }
-        val maxTotal = (tree.tracks.maxOfOrNull { tree.totalMs[it.id] ?: 0L } ?: 0L)
-            .coerceAtLeast(1L)
-        val radii = FloatArray(n) { i ->
-            val t = tree.totalMs[ids[i]] ?: 0L
-            val frac = sqrt(t.toDouble() / maxTotal.toDouble()).toFloat()
-            6f + frac * 16f
-        }
-        val edges = mutableListOf<IntArray>()
-        tree.childrenOf.forEach { (p, cs) ->
-            val pi = index[p] ?: return@forEach
-            cs.forEach { c -> index[c]?.let { ci -> edges.add(intArrayOf(pi, ci)) } }
-        }
-        GraphSim(n, ids.toLongArray(), edges, radii).also { s ->
-            // Pre-settle synchronously so the layout is already spread out on the
-            // first frame — no multi-second wait before the zoom-in can start.
-            var alpha = 1f
-            while (alpha > 0.03f) {
-                s.step(alpha)
-                alpha *= 0.985f
-            }
+/** Build the simulation and pre-settle it so the first frame is already spread out. */
+private fun settledSim(tree: TrackTree): GraphSim {
+    val ids = tree.tracks.map { it.id }
+    val n = ids.size
+    val index = ids.withIndex().associate { (i, id) -> id to i }
+    val maxTotal = (tree.tracks.maxOfOrNull { tree.totalMs[it.id] ?: 0L } ?: 0L)
+        .coerceAtLeast(1L)
+    val radii = FloatArray(n) { i ->
+        val t = tree.totalMs[ids[i]] ?: 0L
+        val frac = sqrt(t.toDouble() / maxTotal.toDouble()).toFloat()
+        6f + frac * 16f
+    }
+    val edges = mutableListOf<IntArray>()
+    tree.childrenOf.forEach { (p, cs) ->
+        val pi = index[p] ?: return@forEach
+        cs.forEach { c -> index[c]?.let { ci -> edges.add(intArrayOf(pi, ci)) } }
+    }
+    return GraphSim(n, ids.toLongArray(), edges, radii).also { s ->
+        var alpha = 1f
+        while (alpha > 0.03f) {
+            s.step(alpha)
+            alpha *= 0.985f
         }
     }
+}
+
+@Composable
+private fun GraphCanvasContent(
+    tree: TrackTree,
+    sim: GraphSim,
+    signature: String,
+    onTapNode: (Long) -> Unit,
+    modifier: Modifier
+) {
+    val density = LocalDensity.current.density
+    val edgeColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+    val labelColor = MaterialTheme.colorScheme.onSurface
+    val bg = MaterialTheme.colorScheme.background
 
     val isRoot = remember(signature) {
         val rootIds = tree.roots.map { it.id }.toSet()

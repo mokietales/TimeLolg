@@ -28,6 +28,7 @@ import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.PauseCircleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.StopCircle
+import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -78,7 +79,7 @@ private val TIMER_PEEK_HEIGHT = 116.dp
 fun NowScreen(
     session: TrackingSession,
     repository: TimeLogRepository,
-    stopRequested: Boolean,
+    stopRequest: StopRequest?,
     onStopRequestHandled: () -> Unit,
     onOpenTrackDetail: (Long) -> Unit,
     onOpenStarMap: () -> Unit
@@ -92,7 +93,7 @@ fun NowScreen(
     // Today's committed time, one count per session (a multi-track session is one record).
     val todayStats = remember(allocRows, dayStart) {
         val todaySessions = allocRows
-            .filter { it.endMs >= dayStart }
+            .filter { it.startMs >= dayStart }
             .groupBy { it.sessionId }
         TodayStats(
             totalMs = todaySessions.values.sumOf { g -> g.first().sessionDurationMs },
@@ -105,10 +106,14 @@ fun NowScreen(
     var pendingStop by remember { mutableStateOf<TrackingSession.StopSnapshot?>(null) }
     // Shown when the user stops a blank (theme-less) session: pick a theme, then commit.
     var stopPickVisible by remember { mutableStateOf(false) }
+    // Set while stopping as part of a switch; started once the current session is saved.
+    var switchTarget by remember { mutableStateOf<TrackingSession.TrackRef?>(null) }
 
     fun commit(snap: TrackingSession.StopSnapshot, allocMs: Map<Long, Long>) {
+        val then = switchTarget
+        switchTarget = null
         scope.launch {
-            if (!repository.commitTimer(snap, allocMs)) {
+            if (!repository.commitTimer(snap, allocMs, thenStart = then)) {
                 Toast.makeText(context, "保存失败，计时仍在继续", Toast.LENGTH_LONG).show()
             }
         }
@@ -124,14 +129,15 @@ fun NowScreen(
         }
     }
 
-    fun requestStop() {
+    fun requestStop(thenStart: TrackingSession.TrackRef? = null) {
+        switchTarget = thenStart
         if (session.tracks.isEmpty()) stopPickVisible = true else finishStop()
     }
 
-    LaunchedEffect(stopRequested) {
-        if (stopRequested) {
+    LaunchedEffect(stopRequest) {
+        if (stopRequest != null) {
             onStopRequestHandled()
-            if (session.isActive) requestStop()
+            if (session.isActive) requestStop(thenStart = stopRequest.thenStart)
         }
     }
 
@@ -201,9 +207,11 @@ fun NowScreen(
                 timerActive = session.isActive,
                 onOpenDetail = onOpenTrackDetail,
                 onOpenStarMap = onOpenStarMap,
+                currentTrackIds = session.tracks.map { it.id },
                 onQuickStartBlank = { session.startBlank() },
                 onQuickStart = { item ->
-                    session.start(TrackingSession.TrackRef(id = item.trackId, name = item.name))
+                    val ref = TrackingSession.TrackRef(id = item.trackId, name = item.name)
+                    if (session.isActive) requestStop(thenStart = ref) else session.start(ref)
                 },
                 onCreateTrack = { name ->
                     scope.launch {
@@ -239,7 +247,10 @@ fun NowScreen(
             title = "为这段时间选择主题",
             available = allTracks,
             initiallySelected = emptySet(),
-            onDismiss = { stopPickVisible = false },
+            onDismiss = {
+                stopPickVisible = false
+                switchTarget = null
+            },
             onConfirm = { refs ->
                 stopPickVisible = false
                 if (refs.isNotEmpty()) {
@@ -261,7 +272,10 @@ fun NowScreen(
             totalMs = snap.effectiveDurationMs,
             tracks = snap.tracks,
             initial = null,
-            onDismiss = { pendingStop = null },
+            onDismiss = {
+                pendingStop = null
+                switchTarget = null
+            },
             onConfirm = { allocMap ->
                 pendingStop = null
                 commit(snap, allocMap)
@@ -269,6 +283,9 @@ fun NowScreen(
         )
     }
 }
+
+/** Ask the Now screen to run its stop flow, optionally starting [thenStart] afterwards. */
+data class StopRequest(val thenStart: TrackingSession.TrackRef?)
 
 /**
  * The running timer rendered as a bottom pull-up sheet. The top [TIMER_PEEK_HEIGHT]
@@ -586,6 +603,7 @@ private fun IdleSection(
     tree: TrackTree?,
     todayStats: TodayStats,
     timerActive: Boolean,
+    currentTrackIds: List<Long>,
     onOpenDetail: (Long) -> Unit,
     onOpenStarMap: () -> Unit,
     onQuickStartBlank: () -> Unit,
@@ -638,10 +656,11 @@ private fun IdleSection(
             QuickStartButton(onClick = onQuickStartBlank)
         }
 
-        // Quick-start: tap a recent theme to begin timing right away. Hidden while
-        // a timer runs so a tap can't silently discard the in-progress session.
-        val quickItems = if (timerActive) emptyList() else summaries
-            .filter { it.sessionCount > 0 }
+        // Recent themes. Idle: tap to start. Running: tap to switch — the current
+        // session goes through the normal stop flow first, so nothing is discarded.
+        val runningSoleTrack = currentTrackIds.singleOrNull()
+        val quickItems = summaries
+            .filter { it.sessionCount > 0 && it.trackId != runningSoleTrack }
             .sortedByDescending { it.lastSessionStartMs }
             .take(6)
         if (quickItems.isNotEmpty()) {
@@ -653,7 +672,7 @@ private fun IdleSection(
                     .padding(bottom = 10.dp)
             ) {
                 Text(
-                    text = "选主题开始",
+                    text = if (timerActive) "切换到" else "选主题开始",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -667,7 +686,12 @@ private fun IdleSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 quickItems.forEach { item ->
-                    QuickStartChip(label = item.name, onClick = { onQuickStart(item) })
+                    QuickStartChip(
+                        label = item.name,
+                        icon = if (timerActive) Icons.Outlined.SwapHoriz
+                        else Icons.Outlined.PlayCircleOutline,
+                        onClick = { onQuickStart(item) }
+                    )
                 }
             }
         }
@@ -770,7 +794,11 @@ private fun QuickStartButton(onClick: () -> Unit) {
 
 /** One-tap chip that immediately starts a session for the given theme. */
 @Composable
-private fun QuickStartChip(label: String, onClick: () -> Unit) {
+private fun QuickStartChip(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -780,7 +808,7 @@ private fun QuickStartChip(label: String, onClick: () -> Unit) {
             .padding(start = 10.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)
     ) {
         Icon(
-            imageVector = Icons.Outlined.PlayCircleOutline,
+            imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier.size(18.dp)

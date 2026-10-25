@@ -182,6 +182,14 @@ fun SessionEditDialog(
                     color = if (validRange) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.error
                 )
+                if (validRange) {
+                    OverlapWarning(
+                        repository = repository,
+                        startMs = sessionStart,
+                        endMs = sessionEnd,
+                        excludeSessionId = sessionId
+                    )
+                }
                 Spacer(Modifier.height(16.dp))
 
                 FieldLabel("备注")

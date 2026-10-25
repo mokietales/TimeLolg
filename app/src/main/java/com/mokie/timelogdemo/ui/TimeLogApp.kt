@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.ListAlt
 import android.Manifest
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,13 +44,16 @@ import com.mokie.timelogdemo.tracking.TimerController
 import com.mokie.timelogdemo.tracking.TrackingSession
 import com.mokie.timelogdemo.ui.mindmap.MindMapScreen
 import com.mokie.timelogdemo.ui.now.NowScreen
+import com.mokie.timelogdemo.ui.now.StopRequest
 import com.mokie.timelogdemo.ui.now.TrackDetailScreen
 import com.mokie.timelogdemo.ui.starmap.StarMapScreen
 import com.mokie.timelogdemo.ui.sessions.SessionsScreen
+import com.mokie.timelogdemo.ui.stats.StatsScreen
 
 private enum class Tab(val title: String, val icon: ImageVector) {
     Now("现在", Icons.Outlined.AccessTime),
-    Review("导图", Icons.Outlined.Insights),
+    Stats("复盘", Icons.Outlined.Insights),
+    Review("导图", Icons.Outlined.AccountTree),
     Sessions("记录", Icons.Outlined.ListAlt)
 }
 
@@ -73,10 +78,22 @@ fun TimeLogApp(
 
     var current by rememberSaveable { mutableStateOf(Tab.Now) }
     var stack by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var switchRequest by remember { mutableStateOf<StopRequest?>(null) }
+    val stopRequest = if (stopRequested) StopRequest(thenStart = null) else switchRequest
 
     // The stop flow lives on the Now tab, so bring it to the front.
-    LaunchedEffect(stopRequested) {
-        if (stopRequested) {
+    LaunchedEffect(stopRequest) {
+        if (stopRequest != null) {
+            stack = emptyList()
+            current = Tab.Now
+        }
+    }
+
+    fun switchTo(track: TrackingSession.TrackRef) {
+        if (session.isActive) {
+            switchRequest = StopRequest(thenStart = track)
+        } else {
+            session.start(track)
             stack = emptyList()
             current = Tab.Now
         }
@@ -135,10 +152,17 @@ fun TimeLogApp(
                     Tab.Now -> NowScreen(
                         session = session,
                         repository = repository,
-                        stopRequested = stopRequested,
-                        onStopRequestHandled = onStopRequestHandled,
+                        stopRequest = stopRequest,
+                        onStopRequestHandled = {
+                            switchRequest = null
+                            onStopRequestHandled()
+                        },
                         onOpenTrackDetail = { id -> pushDetail(id) },
                         onOpenStarMap = { pushStarMap() }
+                    )
+                    Tab.Stats -> StatsScreen(
+                        repository = repository,
+                        onOpenTrackDetail = { id -> pushDetail(id) }
                     )
                     Tab.Review -> MindMapScreen(
                         repository = repository,
@@ -150,6 +174,7 @@ fun TimeLogApp(
                     session = session,
                     repository = repository,
                     onOpenTrackDetail = { id -> pushDetail(id) },
+                    onStartTrack = { track -> switchTo(track) },
                     onBack = { pop() }
                 )
                 top.startsWith("detail:") -> {
@@ -159,7 +184,8 @@ fun TimeLogApp(
                         session = session,
                         repository = repository,
                         onBack = { pop() },
-                        onOpenTrackDetail = { newId -> pushDetail(newId) }
+                        onOpenTrackDetail = { newId -> pushDetail(newId) },
+                        onStartTrack = { track -> switchTo(track) }
                     )
                 }
             }

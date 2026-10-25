@@ -3,11 +3,8 @@ package com.mokie.timelogdemo.tracking
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import androidx.core.app.NotificationCompat
-import com.mokie.timelogdemo.MainActivity
 import com.mokie.timelogdemo.R
 import com.mokie.timelogdemo.ui.util.TimeFormat
 
@@ -50,7 +47,7 @@ object TimerNotifications {
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setContentIntent(activityIntent(context, REQ_OPEN, action = null))
+            .setContentIntent(TimerCommands.openAppIntent(context, REQ_OPEN))
 
         if (session.isPaused) {
             builder
@@ -68,36 +65,15 @@ object TimerNotifications {
         builder.addAction(
             R.drawable.ic_stat_timer,
             if (session.isPaused) "继续" else "暂停",
-            broadcastIntent(context, REQ_TOGGLE, TimerActionReceiver.ACTION_TOGGLE_PAUSE)
+            TimerCommands.broadcastIntent(context, REQ_TOGGLE, TimerActionReceiver.ACTION_TOGGLE_PAUSE)
         )
-        // A single-track session can be committed straight from the notification;
-        // anything that needs a choice (no theme yet, or splitting time across
-        // several) opens the app into the stop flow instead.
-        val stopIntent = if (tracks.size == 1) {
-            broadcastIntent(context, REQ_STOP, TimerActionReceiver.ACTION_STOP)
+        val stopIntent = if (TimerCommands.needsInAppStop(session)) {
+            TimerCommands.stopInAppIntent(context, REQ_STOP)
         } else {
-            activityIntent(context, REQ_STOP, action = MainActivity.ACTION_STOP_REQUEST)
+            TimerCommands.broadcastIntent(context, REQ_STOP, TimerActionReceiver.ACTION_STOP)
         }
         builder.addAction(R.drawable.ic_stat_timer, "停止", stopIntent)
 
         return builder.build()
     }
-
-    private fun broadcastIntent(context: Context, requestCode: Int, action: String): PendingIntent =
-        PendingIntent.getBroadcast(
-            context,
-            requestCode,
-            Intent(context, TimerActionReceiver::class.java).setAction(action),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-    private fun activityIntent(context: Context, requestCode: Int, action: String?): PendingIntent =
-        PendingIntent.getActivity(
-            context,
-            requestCode,
-            Intent(context, MainActivity::class.java)
-                .setAction(action ?: Intent.ACTION_MAIN)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 }

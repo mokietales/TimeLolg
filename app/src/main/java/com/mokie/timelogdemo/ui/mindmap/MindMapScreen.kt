@@ -200,7 +200,7 @@ private fun OutlineRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Spacer(Modifier.width(indent))
@@ -208,7 +208,7 @@ private fun OutlineRow(
         // Disclosure (or placeholder for leaf alignment)
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(40.dp)
                 .clip(CircleShape)
                 .let { if (row.hasChildren) it.clickable(onClick = onToggle) else it },
             contentAlignment = Alignment.Center
@@ -233,15 +233,13 @@ private fun OutlineRow(
             }
         }
 
-        Spacer(Modifier.width(4.dp))
-
-        // Name + total
+        // Name + total + chevron: one wide tap target into the detail screen.
         Row(
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(8.dp))
                 .clickable(onClick = onClickName)
-                .padding(horizontal = 6.dp, vertical = 6.dp),
+                .padding(start = 6.dp, end = 2.dp, top = 10.dp, bottom = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -278,6 +276,14 @@ private fun OutlineRow(
                 ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(16.dp)
+            )
         }
 
         // Add-child affordance
@@ -288,16 +294,8 @@ private fun OutlineRow(
             modifier = Modifier
                 .clip(CircleShape)
                 .clickable(onClick = onAddChild)
-                .padding(6.dp)
-                .size(16.dp)
-        )
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-            modifier = Modifier
-                .padding(start = 2.dp)
-                .size(16.dp)
+                .padding(12.dp)
+                .size(18.dp)
         )
     }
 
@@ -305,7 +303,7 @@ private fun OutlineRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp + indent + 32.dp, bottom = 4.dp)
+                .padding(start = 12.dp + indent + 46.dp, bottom = 4.dp)
         ) {
             Text(
                 text = "已收起 $descCount 个子主题",

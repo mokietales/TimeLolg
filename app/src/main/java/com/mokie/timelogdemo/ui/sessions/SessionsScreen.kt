@@ -65,13 +65,14 @@ fun SessionsScreen(repository: TimeLogRepository) {
         val now = System.currentTimeMillis()
         when (filter) {
             SessionFilter.All -> sessions
+            // A session belongs to the day it started, same as the day grouping below.
             SessionFilter.Today -> {
                 val start = TimeFormat.startOfDayMs(now)
-                sessions.filter { it.endMs >= start }
+                sessions.filter { it.startMs >= start }
             }
             SessionFilter.Week -> {
                 val start = TimeFormat.startOfWeekMs(now)
-                sessions.filter { it.endMs >= start }
+                sessions.filter { it.startMs >= start }
             }
             SessionFilter.Noted -> sessions.filter { it.note.isNotBlank() }
             SessionFilter.Multi -> sessions.filter { it.splits.size > 1 }

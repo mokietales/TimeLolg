@@ -146,11 +146,6 @@ class TrackingSession(context: Context) {
         _changes.value++
     }
 
-    /** Clear only if the running session is still the one that was snapshotted. */
-    fun clearIfStartedAt(snapshotStartMs: Long) {
-        if (startMs == snapshotStartMs) clear()
-    }
-
     private fun flush() {
         prefs.edit().apply {
             startMs?.let { putLong(KEY_START, it) } ?: remove(KEY_START)

@@ -136,6 +136,9 @@ fun ManualSessionDialog(
                     color = if (validRange) MaterialTheme.colorScheme.onSurfaceVariant
                     else MaterialTheme.colorScheme.error
                 )
+                if (validRange) {
+                    OverlapWarning(repository = repository, startMs = startMs, endMs = endMs)
+                }
 
                 DurationPresets(
                     onSelectDuration = { spanMs ->

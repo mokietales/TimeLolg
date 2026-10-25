@@ -112,6 +112,7 @@ object TimeFormat {
         return cal.timeInMillis
     }
 
+    /** Monday 00:00 of the week containing [ms]. */
     fun startOfWeekMs(ms: Long): Long {
         val cal = Calendar.getInstance(TimeZone.getDefault(), locale).apply {
             timeInMillis = ms
@@ -119,14 +120,24 @@ object TimeFormat {
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-            // Roll back to first day of week.
-            val first = firstDayOfWeek
-            while (get(Calendar.DAY_OF_WEEK) != first) {
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
                 add(Calendar.DAY_OF_YEAR, -1)
             }
         }
         return cal.timeInMillis
     }
+
+    /** "一" … "日" for the weekday of [ms]. */
+    fun weekdayShort(ms: Long): String {
+        val dow = Calendar.getInstance().apply { timeInMillis = ms }.get(Calendar.DAY_OF_WEEK)
+        return "日一二三四五六"[dow - 1].toString()
+    }
+
+    fun dayOfMonth(ms: Long): Int =
+        Calendar.getInstance().apply { timeInMillis = ms }.get(Calendar.DAY_OF_MONTH)
+
+    fun yearMonth(ms: Long): String =
+        SimpleDateFormat("yyyy年M月", locale).format(Date(ms))
 
     fun startOfMonthMs(ms: Long): Long {
         val cal = Calendar.getInstance(TimeZone.getDefault(), locale).apply {

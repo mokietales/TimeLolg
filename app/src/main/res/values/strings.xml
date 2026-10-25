@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">喵时</string>
+    <string name="widget_description">查看当前计时，一键开始、暂停或停止</string>
+    <string name="tile_label">喵时计时</string>
 </resources>

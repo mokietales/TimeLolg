@@ -65,7 +65,8 @@ fun TrackDetailScreen(
     session: TrackingSession,
     repository: TimeLogRepository,
     onBack: () -> Unit,
-    onOpenTrackDetail: (Long) -> Unit
+    onOpenTrackDetail: (Long) -> Unit,
+    onStartTrack: (TrackingSession.TrackRef) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val tree by repository.trackTree.collectAsState()
@@ -119,15 +120,18 @@ fun TrackDetailScreen(
 
         Spacer(Modifier.height(12.dp))
 
+        val timingThisAlone = session.isActive && session.tracks.singleOrNull()?.id == trackId
         StartButton(
-            enabled = !session.isActive && track != null,
+            label = if (session.isActive) "切换到此主题" else "开始计时",
+            enabled = track != null && !timingThisAlone,
             onClick = {
-                track?.let { t ->
-                    session.start(TrackingSession.TrackRef(t.id, t.name))
-                    onBack()
-                }
+                track?.let { t -> onStartTrack(TrackingSession.TrackRef(t.id, t.name)) }
             },
-            disabledReason = if (session.isActive) "已有进行中的记录" else null
+            note = when {
+                timingThisAlone -> "正在计时"
+                session.isActive -> "当前记录会先按停止流程保存"
+                else -> null
+            }
         )
 
         Spacer(Modifier.height(8.dp))
@@ -638,8 +642,9 @@ private fun LogTimeButton(onClick: () -> Unit) {
 
 @Composable
 private fun StartButton(
+    label: String,
     enabled: Boolean,
-    disabledReason: String?,
+    note: String?,
     onClick: () -> Unit
 ) {
     Column(
@@ -667,16 +672,16 @@ private fun StartButton(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "开始计时",
+                text = label,
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = if (enabled) MaterialTheme.colorScheme.onPrimary
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (disabledReason != null) {
+        if (note != null) {
             Spacer(Modifier.height(6.dp))
             Text(
-                text = disabledReason,
+                text = note,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -63,6 +63,11 @@ class TimeLogRepository(
         return SessionForEdit(session, sessionDao.getAllocationsForSession(sessionId))
     }
 
+    /** Sessions whose span intersects [startMs, endMs), other than [excludeSessionId]. */
+    suspend fun overlapping(startMs: Long, endMs: Long, excludeSessionId: Long = 0L): List<OverlapRow> =
+        if (endMs <= startMs) emptyList()
+        else sessionDao.findOverlapping(startMs, endMs, excludeSessionId)
+
     /** What deleting a track will do, for the confirmation dialog. */
     data class DeleteImpact(val sessionsRemoved: Int, val sessionsRebalanced: Int)
 
@@ -172,14 +177,24 @@ class TimeLogRepository(
     }
 
     /**
-     * Persist the stopped timer, then clear it. The running session is cleared only
-     * after the row is safely written, so a failed write never loses the time.
+     * Persist the stopped timer, then clear it — and, for a switch, immediately start
+     * timing [thenStart]. The running session is cleared only after the row is safely
+     * written, so a failed write never loses the time.
      * Returns false if nothing was written (the timer is left running).
      */
-    suspend fun commitTimer(snap: TrackingSession.StopSnapshot, allocMs: Map<Long, Long>): Boolean =
+    suspend fun commitTimer(
+        snap: TrackingSession.StopSnapshot,
+        allocMs: Map<Long, Long>,
+        thenStart: TrackRef? = null
+    ): Boolean =
         write {
+            fun finish() {
+                if (tracking.startMs != snap.startMs) return
+                tracking.clear()
+                thenStart?.let(tracking::start)
+            }
             if (snap.effectiveDurationMs <= 0L) {
-                onMain { tracking.clearIfStartedAt(snap.startMs) }
+                onMain { finish() }
                 return@write true
             }
             val live = trackDao.existingIds(allocMs.keys.toList()).toSet()
@@ -196,7 +211,7 @@ class TimeLogRepository(
                     allocations = allocMs.toAllocations()
                 )
             }.logFailure("commitTimer").isSuccess
-            if (ok) onMain { tracking.clearIfStartedAt(snap.startMs) }
+            if (ok) onMain { finish() }
             ok
         }
 
